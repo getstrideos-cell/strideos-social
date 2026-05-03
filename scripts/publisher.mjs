@@ -32,6 +32,8 @@ export async function publishApproved({ accessToken, dryRun = true, onlyId } = {
         item.updatedAt = new Date().toISOString();
         item.xPostId = response.data.id;
         item.xResponse = response;
+        delete item.error;
+        delete item.failedAt;
         results.push({ id: item.id, type: item.type, status: "published", xPostId: response.data.id });
       } catch (error) {
         item.status = "failed";

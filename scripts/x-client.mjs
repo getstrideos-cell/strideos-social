@@ -40,8 +40,23 @@ export async function createXPost(item, token) {
   const json = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(`X API returned ${response.status}: ${JSON.stringify(json)}`);
+    throw new Error(formatXError(response.status, json));
   }
 
   return json;
+}
+
+function formatXError(status, json) {
+  const title = json?.title;
+  const detail = json?.detail;
+
+  if (status === 402 && title === "CreditsDepleted") {
+    return "X API credits are depleted. Add credits in the X Developer dashboard before publishing more items.";
+  }
+
+  if (status === 403 && typeof detail === "string" && detail.includes("Reply to this conversation is not allowed")) {
+    return "X blocked this reply because that post does not allow replies from this account. Pick another target or convert it into a normal post.";
+  }
+
+  return `X API returned ${status}: ${JSON.stringify(json)}`;
 }

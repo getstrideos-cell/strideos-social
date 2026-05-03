@@ -68,7 +68,7 @@ const server = createServer(async (req, res) => {
       return handleCreateItem(req, res);
     }
 
-    const itemAction = url.pathname.match(/^\/items\/([^/]+)\/(approve|reject|draft|update|publish|delete)$/);
+    const itemAction = url.pathname.match(/^\/items\/([^/]+)\/(approve|reject|draft|update|publish|delete|convert-to-post)$/);
     if (itemAction && req.method === "POST") {
       const [, id, action] = itemAction;
       return handleItemAction(req, res, id, action);
@@ -192,6 +192,25 @@ async function handleItemAction(req, res, id, action) {
       }
     });
     await publishApproved({ accessToken, dryRun, onlyId: id });
+    return redirect(res, "/");
+  }
+
+  if (action === "convert-to-post") {
+    await updateQueue((queue) => {
+      const item = findItem(queue, id);
+      item.type = "post";
+      item.status = "draft";
+      item.replyToPostId = undefined;
+      item.targetAuthor = undefined;
+      item.targetHandle = undefined;
+      item.targetPostUrl = undefined;
+      item.targetPostText = undefined;
+      item.targetPostSummary = undefined;
+      item.replyRationale = undefined;
+      item.error = undefined;
+      item.failedAt = undefined;
+      item.updatedAt = new Date().toISOString();
+    });
     return redirect(res, "/");
   }
 
@@ -530,10 +549,11 @@ function renderActions(item) {
   const reject = renderAction(item, "reject", "Reject");
   const draft = renderAction(item, "draft", "Back to draft");
   const remove = renderAction(item, "delete", "Delete");
+  const convertToPost = renderAction(item, "convert-to-post", "Convert to post");
 
   if (item.status === "approved") return `${save}${publish}${draft}${reject}`;
   if (item.status === "rejected") return `${draft}${remove}`;
-  if (item.status === "failed") return `${save}${approve}${reject}${remove}`;
+  if (item.status === "failed") return `${save}${item.type === "reply" ? convertToPost : ""}${approve}${reject}${remove}`;
   return `${save}${approve}${reject}`;
 }
 
@@ -583,6 +603,7 @@ function renderHead(title) {
     button.publish { background: var(--blue); }
     button.reject { background: var(--red); }
     button.draft { background: #73624b; }
+    button.convert-to-post { background: var(--amber); }
     button.delete { background: #4f4540; }
     input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 7px; background: #fffefa; color: var(--ink); padding: 10px 12px; }
     textarea { min-height: 118px; resize: vertical; line-height: 1.45; }
