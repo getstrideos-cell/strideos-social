@@ -294,9 +294,9 @@ function renderDashboard(queue, options) {
     return acc;
   }, {});
 
-  const items = queue.items
-    .map((item) => renderItem(item))
-    .join("");
+  const needsReview = queue.items.filter((item) => ["draft", "failed"].includes(item.status));
+  const approved = queue.items.filter((item) => item.status === "approved");
+  const archive = queue.items.filter((item) => ["published", "rejected"].includes(item.status));
 
   return `<!doctype html>
 <html lang="en">
@@ -321,37 +321,49 @@ ${renderHead("Stride OS Publisher")}
       ${renderMetric("Mode", options.dryRun ? "Dry run" : "Live")}
     </section>
 
-    <section class="toolbar">
+    <section class="mode-banner ${options.dryRun ? "dry" : "live"}">
+      <div>
+        <strong>${options.dryRun ? "Dry run mode" : "Live publishing mode"}</strong>
+        <p>${options.dryRun ? "Approvals and publish buttons are safe to test. Nothing will post to X yet." : "Approved items can publish to X. Review carefully before approving."}</p>
+      </div>
       <form method="post" action="/publish">
-        <button type="submit">Publish approved now</button>
-      </form>
-      <p>${options.publishIntervalMinutes > 0 ? `Auto publisher checks every ${options.publishIntervalMinutes} min.` : "Auto publisher interval is off."}</p>
-    </section>
-
-    <section class="composer">
-      <h2>Add draft</h2>
-      <form method="post" action="/items">
-        <div class="row">
-          <select name="type">
-            <option value="post">Post</option>
-            <option value="reply">Reply</option>
-          </select>
-          <input name="replyToPostId" placeholder="Reply post ID, only for replies">
-        </div>
-        <div class="row">
-          <input name="targetAuthor" placeholder="Target author, for replies">
-          <input name="targetHandle" placeholder="@handle, for replies">
-        </div>
-        <input name="targetPostUrl" placeholder="Target post URL, for replies">
-        <textarea name="targetPostSummary" placeholder="Short summary of the post being replied to"></textarea>
-        <textarea name="text" maxlength="280" placeholder="Write or paste an English X post/reply..." required></textarea>
-        <button type="submit">Add to queue</button>
+        <button type="submit">${options.dryRun ? "Test approved items" : "Publish approved now"}</button>
       </form>
     </section>
 
-    <section class="items">
-      ${items || `<p class="empty">No queued items yet.</p>`}
-    </section>
+    <details class="composer">
+      <summary>Add a draft manually</summary>
+      <div class="composer-body">
+        <form method="post" action="/items">
+          <div class="row">
+            <select name="type">
+              <option value="post">Post</option>
+              <option value="reply">Reply</option>
+            </select>
+            <input name="replyToPostId" placeholder="Reply post ID, only for replies">
+          </div>
+          <textarea name="text" maxlength="280" placeholder="Write or paste an English X post/reply..." required></textarea>
+          <details class="advanced">
+            <summary>Reply context</summary>
+            <div class="advanced-body">
+              <div class="row">
+                <input name="targetAuthor" placeholder="Target author">
+                <input name="targetHandle" placeholder="@handle">
+              </div>
+              <input name="targetPostUrl" placeholder="Target post URL">
+              <textarea name="targetPostSummary" placeholder="Short summary of the post being replied to"></textarea>
+              <textarea name="targetPostText" placeholder="Original post text/context"></textarea>
+              <textarea name="replyRationale" placeholder="Why this reply is worth posting"></textarea>
+            </div>
+          </details>
+          <button type="submit">Add draft</button>
+        </form>
+      </div>
+    </details>
+
+    ${renderItemSection("Needs Review", "Edit, approve, or reject these before anything can publish.", needsReview)}
+    ${renderItemSection("Approved", "These are ready for the publisher. In dry run, publishing is only a simulation.", approved)}
+    ${renderItemSection("Archive", "Published and rejected items stay here for reference.", archive)}
   </main>
 </body>
 </html>`;
@@ -363,11 +375,13 @@ function renderMetric(label, value) {
 
 function renderItem(item) {
   const charCount = item.text?.length || 0;
+  const title = item.type === "reply" ? "Suggested reply" : "Suggested post";
   return `<article class="item ${escapeHtml(item.status)}">
     <div class="item-head">
       <div>
         <span class="pill">${escapeHtml(item.status)}</span>
-        <span class="muted">${escapeHtml(item.type)} · ${escapeHtml(item.id)}</span>
+        <span class="item-title">${title}</span>
+        <span class="muted">${escapeHtml(item.id)}</span>
       </div>
       <span class="chars">${charCount}/280</span>
     </div>
@@ -377,6 +391,35 @@ function renderItem(item) {
     ${renderTargetContext(item)}
 
     <form method="post" action="/items/${encodeURIComponent(item.id)}/update">
+      <label class="field-label">Public text</label>
+      <textarea name="text" maxlength="280" ${item.status === "published" ? "readonly" : ""}>${escapeHtml(item.text || "")}</textarea>
+      ${renderAdvancedFields(item)}
+      <div class="actions">
+        ${renderActions(item)}
+      </div>
+    </form>
+  </article>`;
+}
+
+function renderItemSection(title, description, items) {
+  return `<section class="queue-section">
+    <div class="section-head">
+      <div>
+        <h2>${escapeHtml(title)}</h2>
+        <p>${escapeHtml(description)}</p>
+      </div>
+      <strong>${items.length}</strong>
+    </div>
+    <div class="items">
+      ${items.map((item) => renderItem(item)).join("") || `<p class="empty">Nothing here.</p>`}
+    </div>
+  </section>`;
+}
+
+function renderAdvancedFields(item) {
+  return `<details class="advanced">
+    <summary>${item.type === "reply" ? "Edit reply target" : "Advanced settings"}</summary>
+    <div class="advanced-body">
       <div class="row">
         <select name="type">
           <option value="post" ${item.type === "post" ? "selected" : ""}>Post</option>
@@ -392,16 +435,8 @@ function renderItem(item) {
       <textarea name="targetPostSummary" placeholder="Short summary of the post being replied to">${escapeHtml(item.targetPostSummary || "")}</textarea>
       <textarea name="targetPostText" placeholder="Original post text/context">${escapeHtml(item.targetPostText || "")}</textarea>
       <textarea name="replyRationale" placeholder="Why this reply is worth posting">${escapeHtml(item.replyRationale || "")}</textarea>
-      <textarea name="text" maxlength="280">${escapeHtml(item.text || "")}</textarea>
-      <div class="actions">
-        <button class="secondary" type="submit">Save</button>
-        ${renderAction(item, "approve", "Approve")}
-        ${renderAction(item, "publish", "Publish now")}
-        ${renderAction(item, "reject", "Reject")}
-        ${renderAction(item, "draft", "Back to draft")}
-      </div>
-    </form>
-  </article>`;
+    </div>
+  </details>`;
 }
 
 function renderTargetContext(item) {
@@ -421,8 +456,21 @@ function renderTargetContext(item) {
   </section>`;
 }
 
+function renderActions(item) {
+  if (item.status === "published") return "";
+
+  const save = `<button class="secondary" type="submit">Save edits</button>`;
+  const approve = renderAction(item, "approve", "Approve");
+  const publish = renderAction(item, "publish", "Publish now");
+  const reject = renderAction(item, "reject", "Reject");
+  const draft = renderAction(item, "draft", "Back to draft");
+
+  if (item.status === "approved") return `${save}${publish}${draft}${reject}`;
+  if (item.status === "rejected") return `${draft}`;
+  return `${save}${approve}${reject}`;
+}
+
 function renderAction(item, action, label) {
-  if (item.status === "published" && action !== "draft") return "";
   return `<button formmethod="post" formaction="/items/${encodeURIComponent(item.id)}/${action}" class="${action}" type="submit">${label}</button>`;
 }
 
@@ -457,13 +505,26 @@ function renderHead(title) {
     .metric { background: #fffdfa; border: 1px solid #ddd7ca; border-radius: 8px; padding: 14px; }
     .metric span { display: block; color: #68716f; font-size: 12px; margin-bottom: 6px; }
     .metric strong { font-size: 20px; }
-    .toolbar, .composer, .item { background: #fffdfa; border: 1px solid #ddd7ca; border-radius: 8px; padding: 16px; margin-bottom: 14px; }
-    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #68716f; }
+    .mode-banner, .composer, .item { background: #fffdfa; border: 1px solid #ddd7ca; border-radius: 8px; padding: 16px; margin-bottom: 14px; }
+    .mode-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .mode-banner strong { display: block; font-size: 15px; margin-bottom: 3px; }
+    .mode-banner p { color: #68716f; font-size: 14px; line-height: 1.4; }
+    .mode-banner.dry { border-color: #c6d7de; background: #f5fbfd; }
+    .mode-banner.live { border-color: #e1b8b2; background: #fff7f5; }
+    .composer { padding: 0; overflow: hidden; }
+    .composer summary { cursor: pointer; padding: 14px 16px; font-weight: 800; }
+    .composer-body { border-top: 1px solid #ddd7ca; padding: 16px; }
     .composer form, .item form { display: grid; gap: 10px; }
+    .queue-section { margin: 24px 0; }
+    .section-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 10px; }
+    .section-head p { color: #68716f; font-size: 14px; line-height: 1.4; margin-top: 3px; }
+    .section-head strong { min-width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; background: #e3dfd4; font-size: 14px; }
     .row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; }
     .item-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
     .pill { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; background: #e3dfd4; color: #1d2625; padding: 0 10px; font-size: 12px; font-weight: 800; margin-right: 8px; }
+    .item-title { font-weight: 800; margin-right: 8px; }
     .muted, .chars { color: #68716f; font-size: 13px; }
+    .field-label { color: #68716f; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0; }
     .target-context { border: 1px solid #d7d2c4; border-radius: 8px; background: #f8f5ed; padding: 12px; margin: 10px 0 12px; display: grid; gap: 8px; }
     .target-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
     .target-head strong { font-size: 14px; }
@@ -471,6 +532,9 @@ function renderHead(title) {
     .target-context p { font-size: 14px; line-height: 1.4; }
     .target-context span { display: block; color: #68716f; font-size: 12px; font-weight: 800; margin-bottom: 2px; }
     .target-context blockquote { margin: 0; border-left: 3px solid #c8bea9; padding-left: 10px; color: #3d4644; font-size: 14px; line-height: 1.45; }
+    .advanced { border: 1px solid #e4dfd2; border-radius: 8px; background: #fffefa; }
+    .advanced summary { cursor: pointer; color: #68716f; font-size: 13px; font-weight: 800; padding: 10px 12px; }
+    .advanced-body { border-top: 1px solid #e4dfd2; display: grid; gap: 10px; padding: 12px; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .error { color: #a33a31; font-size: 14px; }
     .success { color: #136f63; font-size: 14px; }
