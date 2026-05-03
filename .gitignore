@@ -4,6 +4,7 @@
 .render-deploy-result.json
 .x-user-access-token
 .x-refresh-token
+.x-*
 node_modules/
 .DS_Store
 npm-debug.log*
