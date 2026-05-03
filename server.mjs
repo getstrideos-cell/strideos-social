@@ -68,7 +68,7 @@ const server = createServer(async (req, res) => {
       return handleCreateItem(req, res);
     }
 
-    const itemAction = url.pathname.match(/^\/items\/([^/]+)\/(approve|reject|draft|update|publish)$/);
+    const itemAction = url.pathname.match(/^\/items\/([^/]+)\/(approve|reject|draft|update|publish|delete)$/);
     if (itemAction && req.method === "POST") {
       const [, id, action] = itemAction;
       return handleItemAction(req, res, id, action);
@@ -174,6 +174,15 @@ async function handleCreateItem(req, res) {
 }
 
 async function handleItemAction(req, res, id, action) {
+  if (action === "delete") {
+    await updateQueue((queue) => {
+      const index = queue.items.findIndex((candidate) => candidate.id === id);
+      if (index === -1) throw new Error(`No item found with id: ${id}`);
+      queue.items.splice(index, 1);
+    });
+    return redirect(res, "/");
+  }
+
   if (action === "publish") {
     await updateQueue((queue) => {
       const item = findItem(queue, id);
@@ -491,9 +500,11 @@ function renderActions(item) {
   const publish = renderAction(item, "publish", "Publish now");
   const reject = renderAction(item, "reject", "Reject");
   const draft = renderAction(item, "draft", "Back to draft");
+  const remove = renderAction(item, "delete", "Delete");
 
   if (item.status === "approved") return `${save}${publish}${draft}${reject}`;
-  if (item.status === "rejected") return `${draft}`;
+  if (item.status === "rejected") return `${draft}${remove}`;
+  if (item.status === "failed") return `${save}${approve}${reject}${remove}`;
   return `${save}${approve}${reject}`;
 }
 
@@ -523,6 +534,7 @@ function renderHead(title) {
     button.publish { background: #2f5f9f; }
     button.reject { background: #a33a31; }
     button.draft { background: #7a6a53; }
+    button.delete { background: #4f4540; }
     input, select, textarea { width: 100%; border: 1px solid #d7d2c4; border-radius: 6px; background: #fffdfa; color: #1d2625; padding: 10px 12px; }
     textarea { min-height: 112px; resize: vertical; line-height: 1.4; }
     .login { min-height: 100vh; display: grid; place-items: center; }
