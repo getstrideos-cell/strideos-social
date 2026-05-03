@@ -75,6 +75,13 @@ function normalizeLegacyStatuses(queue) {
       item.updatedAt = new Date().toISOString();
       changed = true;
     }
+
+    if (item.status === "published" && item.xPostId && item.error) {
+      delete item.error;
+      delete item.failedAt;
+      item.updatedAt = new Date().toISOString();
+      changed = true;
+    }
   }
 
   return changed;
