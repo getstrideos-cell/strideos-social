@@ -1,4 +1,7 @@
 .env
+.render-api-key
+.render-admin-password
+.render-deploy-result.json
 node_modules/
 .DS_Store
 npm-debug.log*

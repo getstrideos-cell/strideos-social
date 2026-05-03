@@ -35,6 +35,28 @@ Recommended setup:
 
 If you use the included `render.yaml`, Render can create the service and disk from the blueprint.
 
+### Render API Deploy
+
+Create a temporary Render API key, then save it locally:
+
+```bash
+printf "rnd_xxx" > .render-api-key
+```
+
+Optionally choose the dashboard password yourself:
+
+```bash
+printf "your-password" > .render-admin-password
+```
+
+Deploy:
+
+```bash
+npm run deploy:render
+```
+
+The script creates a `starter` web service with a 1 GB persistent disk mounted at `/var/data`, with `DRY_RUN=true`.
+
 ## Railway
 
 Recommended setup:
