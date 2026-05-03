@@ -1,0 +1,17 @@
+{
+  "name": "strideos-social",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "approve": "node scripts/set-status.mjs approved",
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "reject": "node scripts/set-status.mjs rejected",
+    "publish:x": "node scripts/publish-approved.mjs",
+    "queue:check": "node scripts/check-queue.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

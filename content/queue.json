@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "id": "example-post-001",
+      "status": "draft",
+      "type": "post",
+      "text": "Most solo founders do not need a bigger content strategy.\n\nThey need a weekly ritual:\n- check the numbers\n- write down what shipped\n- say what broke\n- share one honest lesson\n\nThat is usually enough signal for a real build-in-public update.",
+      "updatedAt": "2026-05-03T12:41:32.429Z"
+    },
+    {
+      "id": "example-reply-001",
+      "status": "draft",
+      "type": "reply",
+      "replyToPostId": "REPLACE_WITH_X_POST_ID",
+      "text": "I think this is where build in public gets interesting.\n\nThe best updates are not polished content. They are specific traces of what actually changed: shipped, stuck, learned, measured."
+    }
+  ]
+}
