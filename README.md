@@ -30,6 +30,11 @@ Reply:
   "status": "approved",
   "type": "reply",
   "replyToPostId": "1234567890123456789",
+  "targetAuthor": "Founder Name",
+  "targetHandle": "@founder",
+  "targetPostUrl": "https://x.com/founder/status/1234567890123456789",
+  "targetPostSummary": "The founder is discussing weekly SaaS metrics.",
+  "replyRationale": "This is aligned with Stride OS because it connects founder consistency with real operating signal.",
   "text": "Your reply text here."
 }
 ```

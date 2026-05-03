@@ -134,6 +134,12 @@ async function handleCreateItem(req, res) {
       createQueueItem({
         type: body.type,
         replyToPostId: body.replyToPostId,
+        targetAuthor: body.targetAuthor,
+        targetHandle: body.targetHandle,
+        targetPostUrl: body.targetPostUrl,
+        targetPostText: body.targetPostText,
+        targetPostSummary: body.targetPostSummary,
+        replyRationale: body.replyRationale,
         text: body.text,
         source: "dashboard"
       })
@@ -162,6 +168,12 @@ async function handleItemAction(req, res, id, action) {
     if (action === "update") {
       item.type = body.type || item.type;
       item.replyToPostId = body.replyToPostId || undefined;
+      item.targetAuthor = body.targetAuthor || undefined;
+      item.targetHandle = body.targetHandle || undefined;
+      item.targetPostUrl = body.targetPostUrl || undefined;
+      item.targetPostText = body.targetPostText || undefined;
+      item.targetPostSummary = body.targetPostSummary || undefined;
+      item.replyRationale = body.replyRationale || undefined;
       item.text = body.text || "";
     } else {
       item.status = action === "reject" ? "rejected" : action;
@@ -326,6 +338,12 @@ ${renderHead("Stride OS Publisher")}
           </select>
           <input name="replyToPostId" placeholder="Reply post ID, only for replies">
         </div>
+        <div class="row">
+          <input name="targetAuthor" placeholder="Target author, for replies">
+          <input name="targetHandle" placeholder="@handle, for replies">
+        </div>
+        <input name="targetPostUrl" placeholder="Target post URL, for replies">
+        <textarea name="targetPostSummary" placeholder="Short summary of the post being replied to"></textarea>
         <textarea name="text" maxlength="280" placeholder="Write or paste an English X post/reply..." required></textarea>
         <button type="submit">Add to queue</button>
       </form>
@@ -356,6 +374,7 @@ function renderItem(item) {
 
     ${item.error ? `<p class="error">${escapeHtml(item.error)}</p>` : ""}
     ${item.xPostId ? `<p class="success">Published X post ID: ${escapeHtml(item.xPostId)}</p>` : ""}
+    ${renderTargetContext(item)}
 
     <form method="post" action="/items/${encodeURIComponent(item.id)}/update">
       <div class="row">
@@ -365,6 +384,14 @@ function renderItem(item) {
         </select>
         <input name="replyToPostId" value="${escapeHtml(item.replyToPostId || "")}" placeholder="Reply post ID">
       </div>
+      <div class="row">
+        <input name="targetAuthor" value="${escapeHtml(item.targetAuthor || "")}" placeholder="Target author">
+        <input name="targetHandle" value="${escapeHtml(item.targetHandle || "")}" placeholder="@handle">
+      </div>
+      <input name="targetPostUrl" value="${escapeHtml(item.targetPostUrl || "")}" placeholder="Target post URL">
+      <textarea name="targetPostSummary" placeholder="Short summary of the post being replied to">${escapeHtml(item.targetPostSummary || "")}</textarea>
+      <textarea name="targetPostText" placeholder="Original post text/context">${escapeHtml(item.targetPostText || "")}</textarea>
+      <textarea name="replyRationale" placeholder="Why this reply is worth posting">${escapeHtml(item.replyRationale || "")}</textarea>
       <textarea name="text" maxlength="280">${escapeHtml(item.text || "")}</textarea>
       <div class="actions">
         <button class="secondary" type="submit">Save</button>
@@ -375,6 +402,23 @@ function renderItem(item) {
       </div>
     </form>
   </article>`;
+}
+
+function renderTargetContext(item) {
+  if (item.type !== "reply") return "";
+  if (!item.targetAuthor && !item.targetHandle && !item.targetPostSummary && !item.targetPostUrl && !item.targetPostText) return "";
+
+  const author = [item.targetAuthor, item.targetHandle].filter(Boolean).join(" ");
+  return `<section class="target-context">
+    <div class="target-head">
+      <strong>Reply target</strong>
+      ${item.targetPostUrl ? `<a href="${escapeHtml(item.targetPostUrl)}" target="_blank" rel="noreferrer">Open post</a>` : ""}
+    </div>
+    ${author ? `<p><span>Author</span>${escapeHtml(author)}</p>` : ""}
+    ${item.targetPostSummary ? `<p><span>Summary</span>${escapeHtml(item.targetPostSummary)}</p>` : ""}
+    ${item.targetPostText ? `<blockquote>${escapeHtml(item.targetPostText)}</blockquote>` : ""}
+    ${item.replyRationale ? `<p><span>Why reply</span>${escapeHtml(item.replyRationale)}</p>` : ""}
+  </section>`;
 }
 
 function renderAction(item, action, label) {
@@ -420,6 +464,13 @@ function renderHead(title) {
     .item-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
     .pill { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; background: #e3dfd4; color: #1d2625; padding: 0 10px; font-size: 12px; font-weight: 800; margin-right: 8px; }
     .muted, .chars { color: #68716f; font-size: 13px; }
+    .target-context { border: 1px solid #d7d2c4; border-radius: 8px; background: #f8f5ed; padding: 12px; margin: 10px 0 12px; display: grid; gap: 8px; }
+    .target-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .target-head strong { font-size: 14px; }
+    .target-head a { color: #2f5f9f; font-size: 13px; font-weight: 700; text-decoration: none; }
+    .target-context p { font-size: 14px; line-height: 1.4; }
+    .target-context span { display: block; color: #68716f; font-size: 12px; font-weight: 800; margin-bottom: 2px; }
+    .target-context blockquote { margin: 0; border-left: 3px solid #c8bea9; padding-left: 10px; color: #3d4644; font-size: 14px; line-height: 1.45; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .error { color: #a33a31; font-size: 14px; }
     .success { color: #136f63; font-size: 14px; }

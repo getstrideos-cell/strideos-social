@@ -110,6 +110,11 @@ Multiple items:
     {
       "type": "reply",
       "replyToPostId": "1234567890123456789",
+      "targetAuthor": "Founder Name",
+      "targetHandle": "@founder",
+      "targetPostUrl": "https://x.com/founder/status/1234567890123456789",
+      "targetPostSummary": "The founder is discussing weekly SaaS metrics.",
+      "replyRationale": "This is a useful place to add a practical build-in-public perspective.",
       "text": "The best build-in-public updates are usually specific, not polished."
     }
   ]
