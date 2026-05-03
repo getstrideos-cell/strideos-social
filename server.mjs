@@ -95,8 +95,14 @@ async function handleApiCreateItem(req, res) {
   }
 
   const body = await parseBody(req);
+  const items = Array.isArray(body.items) ? body.items : [body];
+  const validationErrors = items.flatMap((item, index) => validateApiQueueItem(item, index));
+
+  if (validationErrors.length > 0) {
+    return sendJson(res, 400, { error: "Invalid queue items", details: validationErrors });
+  }
+
   const created = await updateQueue((queue) => {
-    const items = Array.isArray(body.items) ? body.items : [body];
     const createdItems = items.map((item) =>
       createQueueItem({
         ...item,
@@ -109,6 +115,25 @@ async function handleApiCreateItem(req, res) {
   });
 
   return sendJson(res, 201, { items: created });
+}
+
+function validateApiQueueItem(item, index) {
+  const errors = [];
+  const label = `items[${index}]`;
+
+  if (item.type === "reply") {
+    if (!item.replyToPostId || item.replyToPostId === "REPLACE_WITH_X_POST_ID") {
+      errors.push(`${label}.replyToPostId is required for contextual replies.`);
+    }
+    if (!item.targetPostUrl) errors.push(`${label}.targetPostUrl is required for contextual replies.`);
+    if (!item.targetPostSummary) errors.push(`${label}.targetPostSummary is required for contextual replies.`);
+    if (!item.replyRationale) errors.push(`${label}.replyRationale is required for contextual replies.`);
+    if (!item.targetAuthor && !item.targetHandle) {
+      errors.push(`${label}.targetAuthor or ${label}.targetHandle is required for contextual replies.`);
+    }
+  }
+
+  return errors;
 }
 
 async function handleLogin(req, res) {
@@ -441,14 +466,16 @@ function renderAdvancedFields(item) {
 
 function renderTargetContext(item) {
   if (item.type !== "reply") return "";
-  if (!item.targetAuthor && !item.targetHandle && !item.targetPostSummary && !item.targetPostUrl && !item.targetPostText) return "";
 
   const author = [item.targetAuthor, item.targetHandle].filter(Boolean).join(" ");
-  return `<section class="target-context">
+  const hasContext = item.targetPostUrl && item.targetPostSummary && item.replyRationale && (item.targetAuthor || item.targetHandle);
+
+  return `<section class="target-context ${hasContext ? "" : "missing"}">
     <div class="target-head">
-      <strong>Reply target</strong>
+      <strong>${hasContext ? "Reply target" : "Reply target missing"}</strong>
       ${item.targetPostUrl ? `<a href="${escapeHtml(item.targetPostUrl)}" target="_blank" rel="noreferrer">Open post</a>` : ""}
     </div>
+    ${hasContext ? "" : `<p><span>Needs context</span>Add the original post, author, summary, and reason before approving this reply.</p>`}
     ${author ? `<p><span>Author</span>${escapeHtml(author)}</p>` : ""}
     ${item.targetPostSummary ? `<p><span>Summary</span>${escapeHtml(item.targetPostSummary)}</p>` : ""}
     ${item.targetPostText ? `<blockquote>${escapeHtml(item.targetPostText)}</blockquote>` : ""}
@@ -526,6 +553,7 @@ function renderHead(title) {
     .muted, .chars { color: #68716f; font-size: 13px; }
     .field-label { color: #68716f; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0; }
     .target-context { border: 1px solid #d7d2c4; border-radius: 8px; background: #f8f5ed; padding: 12px; margin: 10px 0 12px; display: grid; gap: 8px; }
+    .target-context.missing { border-color: #e1b8b2; background: #fff7f5; }
     .target-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
     .target-head strong { font-size: 14px; }
     .target-head a { color: #2f5f9f; font-size: 13px; font-weight: 700; text-decoration: none; }
