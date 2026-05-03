@@ -12,6 +12,10 @@ export async function readQueue() {
     throw new Error(`${queuePath} must contain an items array.`);
   }
 
+  if (normalizeLegacyStatuses(queue)) {
+    await writeQueue(queue);
+  }
+
   return queue;
 }
 
@@ -59,4 +63,19 @@ async function ensureQueueFile() {
     if (error?.code !== "ENOENT") throw error;
     await writeQueue({ items: [] });
   }
+}
+
+function normalizeLegacyStatuses(queue) {
+  let changed = false;
+
+  for (const item of queue.items) {
+    if (item.status === "approve") {
+      item.status = "draft";
+      item.legacyStatus = "approve";
+      item.updatedAt = new Date().toISOString();
+      changed = true;
+    }
+  }
+
+  return changed;
 }

@@ -201,7 +201,7 @@ async function handleItemAction(req, res, id, action) {
       item.replyRationale = body.replyRationale || undefined;
       item.text = body.text || "";
     } else {
-      item.status = action === "reject" ? "rejected" : action;
+      item.status = action === "approve" ? "approved" : action === "reject" ? "rejected" : action;
     }
 
     item.updatedAt = new Date().toISOString();
