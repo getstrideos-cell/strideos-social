@@ -3,6 +3,9 @@ export function validatePublishItem(item) {
   if (!["post", "reply"].includes(item.type)) {
     throw new Error(`${item.id} has unsupported type: ${item.type}`);
   }
+  if (item.requiresManualAsset || item.format === "founder-moment") {
+    throw new Error(`${item.id} needs a manual image/video asset. Post it manually, then mark it as posted.`);
+  }
   if (!item.text || typeof item.text !== "string") {
     throw new Error(`${item.id} is missing text.`);
   }

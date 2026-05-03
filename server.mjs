@@ -68,7 +68,7 @@ const server = createServer(async (req, res) => {
       return handleCreateItem(req, res);
     }
 
-    const itemAction = url.pathname.match(/^\/items\/([^/]+)\/(approve|reject|draft|update|publish|delete|convert-to-post)$/);
+    const itemAction = url.pathname.match(/^\/items\/([^/]+)\/(approve|reject|draft|update|publish|delete|convert-to-post|manual-posted)$/);
     if (itemAction && req.method === "POST") {
       const [, id, action] = itemAction;
       return handleItemAction(req, res, id, action);
@@ -121,7 +121,7 @@ function validateApiQueueItem(item, index) {
   const errors = [];
   const label = `items[${index}]`;
 
-  if (item.type === "reply") {
+    if (item.type === "reply") {
     if (!item.replyToPostId || item.replyToPostId === "REPLACE_WITH_X_POST_ID") {
       errors.push(`${label}.replyToPostId is required for contextual replies.`);
     }
@@ -131,6 +131,16 @@ function validateApiQueueItem(item, index) {
     if (!item.targetAuthor && !item.targetHandle) {
       errors.push(`${label}.targetAuthor or ${label}.targetHandle is required for contextual replies.`);
     }
+  }
+
+  if (item.format === "founder-moment") {
+    if (item.type && item.type !== "post") {
+      errors.push(`${label}.type must be post for founder moment items.`);
+    }
+    if (!item.visualBrief) errors.push(`${label}.visualBrief is required for founder moment items.`);
+    if (!item.captureInstruction) errors.push(`${label}.captureInstruction is required for founder moment items.`);
+    if (!item.trendSignal) errors.push(`${label}.trendSignal is required for founder moment items.`);
+    if (!item.whyNow) errors.push(`${label}.whyNow is required for founder moment items.`);
   }
 
   return errors;
@@ -158,6 +168,8 @@ async function handleCreateItem(req, res) {
     queue.items.unshift(
       createQueueItem({
         type: body.type,
+        format: body.format,
+        title: body.title,
         replyToPostId: body.replyToPostId,
         targetAuthor: body.targetAuthor,
         targetHandle: body.targetHandle,
@@ -165,6 +177,13 @@ async function handleCreateItem(req, res) {
         targetPostText: body.targetPostText,
         targetPostSummary: body.targetPostSummary,
         replyRationale: body.replyRationale,
+        trendSignal: body.trendSignal,
+        whyNow: body.whyNow,
+        visualBrief: body.visualBrief,
+        captureInstruction: body.captureInstruction,
+        postingNotes: body.postingNotes,
+        imageAlt: body.imageAlt,
+        requiresManualAsset: body.requiresManualAsset === "on",
         text: body.text,
         source: "dashboard"
       })
@@ -214,12 +233,26 @@ async function handleItemAction(req, res, id, action) {
     return redirect(res, "/");
   }
 
+  if (action === "manual-posted") {
+    await updateQueue((queue) => {
+      const item = findItem(queue, id);
+      item.status = "published";
+      item.manualPublishedAt = new Date().toISOString();
+      item.updatedAt = new Date().toISOString();
+      delete item.error;
+      delete item.failedAt;
+    });
+    return redirect(res, "/");
+  }
+
   const body = action === "update" ? await parseBody(req) : {};
   await updateQueue((queue) => {
     const item = findItem(queue, id);
 
     if (action === "update") {
       item.type = body.type || item.type;
+      item.format = body.format || item.format;
+      item.title = body.title || undefined;
       item.replyToPostId = body.replyToPostId || undefined;
       item.targetAuthor = body.targetAuthor || undefined;
       item.targetHandle = body.targetHandle || undefined;
@@ -227,6 +260,13 @@ async function handleItemAction(req, res, id, action) {
       item.targetPostText = body.targetPostText || undefined;
       item.targetPostSummary = body.targetPostSummary || undefined;
       item.replyRationale = body.replyRationale || undefined;
+      item.trendSignal = body.trendSignal || undefined;
+      item.whyNow = body.whyNow || undefined;
+      item.visualBrief = body.visualBrief || undefined;
+      item.captureInstruction = body.captureInstruction || undefined;
+      item.postingNotes = body.postingNotes || undefined;
+      item.imageAlt = body.imageAlt || undefined;
+      item.requiresManualAsset = body.requiresManualAsset === "on" || item.format === "founder-moment";
       item.text = body.text || "";
     } else {
       item.status = action === "approve" ? "approved" : action === "reject" ? "rejected" : action;
@@ -347,7 +387,9 @@ function renderDashboard(queue, options) {
     return acc;
   }, {});
 
-  const needsReview = queue.items.filter((item) => ["draft", "failed"].includes(item.status));
+  const isFounderMoment = (item) => item.format === "founder-moment" || item.requiresManualAsset;
+  const founderMoments = queue.items.filter((item) => ["draft", "failed"].includes(item.status) && isFounderMoment(item));
+  const needsReview = queue.items.filter((item) => ["draft", "failed"].includes(item.status) && !isFounderMoment(item));
   const approved = queue.items.filter((item) => item.status === "approved");
   const archive = queue.items.filter((item) => ["published", "rejected"].includes(item.status));
 
@@ -400,6 +442,7 @@ ${renderHead("Stride OS Publisher")}
               <option value="post">Post</option>
               <option value="reply">Reply</option>
             </select>
+            <input type="hidden" name="format" value="standard">
             <input name="replyToPostId" placeholder="Reply post ID, only for replies">
           </div>
           <textarea name="text" maxlength="280" placeholder="Write or paste an English X post/reply..." required></textarea>
@@ -421,6 +464,7 @@ ${renderHead("Stride OS Publisher")}
       </div>
     </details>
 
+    ${renderItemSection("Founder Moments", "Manual image ideas only you can create: photo brief, context, and caption.", founderMoments, "moments")}
     ${renderItemSection("Needs Review", "Edit, approve, or reject these before anything can publish.", needsReview, "review")}
     ${renderItemSection("Approved", "Ready to publish. In live mode, the publish button posts to X.", approved, "approved")}
     ${renderItemSection("Archive", "Published, rejected, and deleted candidates stay out of the review flow.", archive, "archive", true)}
@@ -436,14 +480,14 @@ function renderMetric(label, value) {
 
 function renderItem(item) {
   const charCount = item.text?.length || 0;
-  const title = item.type === "reply" ? "Suggested reply" : "Suggested post";
+  const title = item.format === "founder-moment" ? "Founder moment" : item.type === "reply" ? "Suggested reply" : "Suggested post";
   const actionHint = getActionHint(item);
-  return `<article class="item ${escapeHtml(item.status)}">
+  return `<article class="item ${escapeHtml(item.status)} ${item.format === "founder-moment" ? "founder-moment" : ""}">
     <div class="item-head">
       <div>
         <span class="pill">${escapeHtml(item.status)}</span>
-        <span class="type-pill">${escapeHtml(item.type)}</span>
-        <span class="item-title">${title}</span>
+        <span class="type-pill">${escapeHtml(item.format === "founder-moment" ? "manual image" : item.type)}</span>
+        <span class="item-title">${escapeHtml(item.title || title)}</span>
       </div>
       <span class="chars">${charCount}/280</span>
     </div>
@@ -451,6 +495,8 @@ function renderItem(item) {
 
     ${item.error ? `<p class="alert error">${escapeHtml(item.error)}</p>` : ""}
     ${item.xPostId ? `<p class="alert success">Published X post ID: ${escapeHtml(item.xPostId)}</p>` : ""}
+    ${item.manualPublishedAt ? `<p class="alert success">Marked as posted manually.</p>` : ""}
+    ${renderFounderMomentContext(item)}
     ${renderTargetContext(item)}
 
     <form method="post" action="/items/${encodeURIComponent(item.id)}/update">
@@ -490,6 +536,8 @@ function renderItemSection(title, description, items, kind, collapsed = false) {
 }
 
 function getActionHint(item) {
+  if (item.format === "founder-moment" && item.status === "published") return "Manual image post marked as done.";
+  if (item.format === "founder-moment") return "Take the suggested photo, edit the caption, then post it manually on X.";
   if (item.status === "approved") return "Ready. Publish now, send back to draft, or reject.";
   if (item.status === "failed") return "Publishing failed. Review the error, edit if needed, then approve again.";
   if (item.status === "rejected") return "Rejected. Restore to draft or delete it from the queue.";
@@ -498,16 +546,47 @@ function getActionHint(item) {
   return "Review the post text, then approve or reject.";
 }
 
+function renderFounderMomentContext(item) {
+  if (item.format !== "founder-moment" && !item.requiresManualAsset) return "";
+
+  return `<section class="moment-context">
+    <div class="moment-grid">
+      ${renderMomentField("Trend signal", item.trendSignal)}
+      ${renderMomentField("Why now", item.whyNow)}
+      ${renderMomentField("Photo to take", item.visualBrief)}
+      ${renderMomentField("How to shoot it", item.captureInstruction)}
+      ${renderMomentField("Posting note", item.postingNotes)}
+      ${renderMomentField("Alt text", item.imageAlt)}
+    </div>
+  </section>`;
+}
+
+function renderMomentField(label, value) {
+  if (!value) return "";
+  return `<p><span>${escapeHtml(label)}</span>${escapeHtml(value)}</p>`;
+}
+
 function renderAdvancedFields(item) {
   return `<details class="advanced">
-    <summary>${item.type === "reply" ? "Edit reply target" : "Advanced settings"}</summary>
+    <summary>${item.format === "founder-moment" ? "Edit photo brief" : item.type === "reply" ? "Edit reply target" : "Advanced settings"}</summary>
     <div class="advanced-body">
       <div class="row">
         <select name="type">
           <option value="post" ${item.type === "post" ? "selected" : ""}>Post</option>
           <option value="reply" ${item.type === "reply" ? "selected" : ""}>Reply</option>
         </select>
+        <select name="format">
+          <option value="standard" ${item.format !== "founder-moment" ? "selected" : ""}>Standard</option>
+          <option value="founder-moment" ${item.format === "founder-moment" ? "selected" : ""}>Founder moment</option>
+        </select>
+      </div>
+      <label class="check-row">
+        <input type="checkbox" name="requiresManualAsset" ${item.requiresManualAsset ? "checked" : ""}>
+        Needs manual image/video
+      </label>
+      <div class="row">
         <input name="replyToPostId" value="${escapeHtml(item.replyToPostId || "")}" placeholder="Reply post ID">
+        <input name="title" value="${escapeHtml(item.title || "")}" placeholder="Internal title">
       </div>
       <div class="row">
         <input name="targetAuthor" value="${escapeHtml(item.targetAuthor || "")}" placeholder="Target author">
@@ -517,6 +596,12 @@ function renderAdvancedFields(item) {
       <textarea name="targetPostSummary" placeholder="Short summary of the post being replied to">${escapeHtml(item.targetPostSummary || "")}</textarea>
       <textarea name="targetPostText" placeholder="Original post text/context">${escapeHtml(item.targetPostText || "")}</textarea>
       <textarea name="replyRationale" placeholder="Why this reply is worth posting">${escapeHtml(item.replyRationale || "")}</textarea>
+      <textarea name="trendSignal" placeholder="Trend signal behind this idea">${escapeHtml(item.trendSignal || "")}</textarea>
+      <textarea name="whyNow" placeholder="Why this is worth posting now">${escapeHtml(item.whyNow || "")}</textarea>
+      <textarea name="visualBrief" placeholder="Photo/video to capture">${escapeHtml(item.visualBrief || "")}</textarea>
+      <textarea name="captureInstruction" placeholder="How to shoot it">${escapeHtml(item.captureInstruction || "")}</textarea>
+      <textarea name="postingNotes" placeholder="Posting note">${escapeHtml(item.postingNotes || "")}</textarea>
+      <textarea name="imageAlt" placeholder="Alt text">${escapeHtml(item.imageAlt || "")}</textarea>
     </div>
   </details>`;
 }
@@ -550,6 +635,12 @@ function renderActions(item) {
   const draft = renderAction(item, "draft", "Back to draft");
   const remove = renderAction(item, "delete", "Delete");
   const convertToPost = renderAction(item, "convert-to-post", "Convert to post");
+  const manualPosted = renderAction(item, "manual-posted", "Mark posted manually");
+
+  if (item.format === "founder-moment" || item.requiresManualAsset) {
+    if (item.status === "rejected") return `${draft}${remove}`;
+    return `${save}${manualPosted}${reject}`;
+  }
 
   if (item.status === "approved") return `${save}${publish}${draft}${reject}`;
   if (item.status === "rejected") return `${draft}${remove}`;
@@ -604,6 +695,7 @@ function renderHead(title) {
     button.reject { background: var(--red); }
     button.draft { background: #73624b; }
     button.convert-to-post { background: var(--amber); }
+    button.manual-posted { background: var(--blue); }
     button.delete { background: #4f4540; }
     input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 7px; background: #fffefa; color: var(--ink); padding: 10px 12px; }
     textarea { min-height: 118px; resize: vertical; line-height: 1.45; }
@@ -644,6 +736,7 @@ function renderHead(title) {
     .item.approved::before { background: var(--green); }
     .item.failed::before { background: var(--red); }
     .item.published::before { background: var(--blue); }
+    .item.founder-moment::before { background: var(--amber); }
     .item-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 6px; }
     .pill, .type-pill { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 0 9px; font-size: 12px; font-weight: 900; margin-right: 7px; }
     .pill { background: #e4dfd3; color: var(--ink); }
@@ -663,9 +756,15 @@ function renderHead(title) {
     .target-context p { font-size: 14px; line-height: 1.4; }
     .target-context span { display: block; color: var(--muted); font-size: 12px; font-weight: 900; margin-bottom: 2px; }
     .target-context blockquote { margin: 0; border-left: 3px solid #c8bea9; padding-left: 10px; color: #3d4644; font-size: 14px; line-height: 1.45; }
+    .moment-context { border: 1px solid #e1c994; border-radius: 8px; background: #fff9eb; padding: 13px; margin: 10px 0 12px; }
+    .moment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .moment-context p { font-size: 14px; line-height: 1.4; }
+    .moment-context span { display: block; color: #7d5a1f; font-size: 12px; font-weight: 900; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0; }
     .advanced { border: 1px solid #e4dfd2; border-radius: 8px; background: #fffefa; }
     .advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 900; padding: 10px 12px; }
     .advanced-body { border-top: 1px solid #e4dfd2; display: grid; gap: 10px; padding: 12px; }
+    .check-row { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 800; }
+    .check-row input { width: auto; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .alert { border-radius: 8px; padding: 10px 12px; font-size: 14px; line-height: 1.4; }
     .error { color: #8d3029; background: #fff2ef; border: 1px solid #efc9c3; }
@@ -677,6 +776,7 @@ function renderHead(title) {
       .top-actions { justify-content: space-between; }
       .status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .row { grid-template-columns: 1fr; }
+      .moment-grid { grid-template-columns: 1fr; }
       .item-head { flex-direction: column; }
       button { width: 100%; }
       .actions { display: grid; grid-template-columns: 1fr; }
