@@ -193,6 +193,10 @@ async function handleCreateItem(req, res) {
         targetPostText: body.targetPostText,
         targetPostSummary: body.targetPostSummary,
         replyRationale: body.replyRationale,
+        recommendedSurface: body.recommendedSurface,
+        viralThesis: body.viralThesis,
+        evidence: body.evidence,
+        sourceUrl: body.sourceUrl,
         trendSignal: body.trendSignal,
         whyNow: body.whyNow,
         visualBrief: body.visualBrief,
@@ -200,6 +204,7 @@ async function handleCreateItem(req, res) {
         postingNotes: body.postingNotes,
         imageAlt: body.imageAlt,
         requiresManualAsset: body.requiresManualAsset === "on",
+        requiresManualPublish: body.requiresManualPublish === "on",
         text: body.text,
         source: "dashboard"
       })
@@ -293,6 +298,10 @@ async function handleItemAction(req, res, id, action) {
       item.targetPostText = body.targetPostText || undefined;
       item.targetPostSummary = body.targetPostSummary || undefined;
       item.replyRationale = body.replyRationale || undefined;
+      item.recommendedSurface = body.recommendedSurface || undefined;
+      item.viralThesis = body.viralThesis || undefined;
+      item.evidence = body.evidence || undefined;
+      item.sourceUrl = body.sourceUrl || undefined;
       item.trendSignal = body.trendSignal || undefined;
       item.whyNow = body.whyNow || undefined;
       item.visualBrief = body.visualBrief || undefined;
@@ -300,6 +309,7 @@ async function handleItemAction(req, res, id, action) {
       item.postingNotes = body.postingNotes || undefined;
       item.imageAlt = body.imageAlt || undefined;
       item.requiresManualAsset = body.requiresManualAsset === "on" || item.format === "founder-moment";
+      item.requiresManualPublish = body.requiresManualPublish === "on" || item.format === "community-post";
       item.text = body.text || "";
     } else {
       item.status = action === "approve" ? "approved" : action === "reject" ? "rejected" : action;
@@ -420,9 +430,12 @@ function renderDashboard(queue, options) {
     return acc;
   }, {});
 
+  const isManualItem = (item) => ["founder-moment", "community-post"].includes(item.format) || item.requiresManualAsset || item.requiresManualPublish;
   const isFounderMoment = (item) => item.format === "founder-moment" || item.requiresManualAsset;
+  const isCommunityPost = (item) => item.format === "community-post" || item.requiresManualPublish;
   const founderMoments = queue.items.filter((item) => ["draft", "failed"].includes(item.status) && isFounderMoment(item));
-  const needsReview = queue.items.filter((item) => ["draft", "failed"].includes(item.status) && !isFounderMoment(item));
+  const communityPosts = queue.items.filter((item) => ["draft", "failed"].includes(item.status) && isCommunityPost(item) && !isFounderMoment(item));
+  const needsReview = queue.items.filter((item) => ["draft", "failed"].includes(item.status) && !isManualItem(item));
   const approved = queue.items.filter((item) => item.status === "approved");
   const archive = queue.items.filter((item) => ["published", "rejected"].includes(item.status));
   const rejectedCount = queue.items.filter((item) => item.status === "rejected").length;
@@ -507,6 +520,7 @@ ${renderHead("Stride OS Publisher")}
     </details>
 
     ${renderItemSection("Founder Moments", "Manual image ideas only you can create: photo brief, context, and caption.", founderMoments, "moments")}
+    ${renderItemSection("Community Posts", "Manual posts designed for the build-in-public community.", communityPosts, "community")}
     ${renderItemSection("Needs Review", "Edit, approve, or reject these before anything can publish.", needsReview, "review")}
     ${renderItemSection("Approved", "Ready to publish. In live mode, the publish button posts to X.", approved, "approved")}
     ${renderItemSection("Archive", "Published and rejected items stay out of the review flow.", archive, "archive", true, archiveActions)}
@@ -569,13 +583,20 @@ function formatTime(value) {
 
 function renderItem(item) {
   const charCount = item.text?.length || 0;
-  const title = item.format === "founder-moment" ? "Founder moment" : item.type === "reply" ? "Suggested reply" : "Suggested post";
+  const title =
+    item.format === "founder-moment"
+      ? "Founder moment"
+      : item.format === "community-post"
+        ? "Community post"
+        : item.type === "reply"
+          ? "Suggested reply"
+          : "Suggested post";
   const actionHint = getActionHint(item);
   return `<article class="item ${escapeHtml(item.status)} ${item.format === "founder-moment" ? "founder-moment" : ""}">
     <div class="item-head">
       <div>
         <span class="pill">${escapeHtml(item.status)}</span>
-        <span class="type-pill">${escapeHtml(item.format === "founder-moment" ? "manual image" : item.type)}</span>
+        <span class="type-pill">${escapeHtml(item.format === "founder-moment" ? "manual image" : item.format === "community-post" ? "community" : item.type)}</span>
         <span class="item-title">${escapeHtml(item.title || title)}</span>
       </div>
       <span class="chars">${charCount}/280</span>
@@ -585,6 +606,7 @@ function renderItem(item) {
     ${item.error ? `<p class="alert error">${escapeHtml(item.error)}</p>` : ""}
     ${item.xPostId ? `<p class="alert success">Published X post ID: ${escapeHtml(item.xPostId)}</p>` : ""}
     ${item.manualPublishedAt ? `<p class="alert success">Marked as posted manually.</p>` : ""}
+    ${renderStrategyContext(item)}
     ${renderFounderMomentContext(item)}
     ${renderTargetContext(item)}
 
@@ -630,12 +652,27 @@ function renderItemSection(title, description, items, kind, collapsed = false, a
 function getActionHint(item) {
   if (item.format === "founder-moment" && item.status === "published") return "Manual image post marked as done.";
   if (item.format === "founder-moment") return "Take the suggested photo, edit the caption, then post it manually on X.";
+  if (item.format === "community-post") return "Post this manually inside the build-in-public community, then mark it as posted.";
   if (item.status === "approved") return "Ready. Publish now, send back to draft, or reject.";
   if (item.status === "failed") return "Publishing failed. Review the error, edit if needed, then approve again.";
   if (item.status === "rejected") return "Rejected. Restore to draft or delete it from the queue.";
   if (item.status === "published") return "Published to X.";
   if (item.type === "reply") return "Review the target post and suggested reply before approving.";
   return "Review the post text, then approve or reject.";
+}
+
+function renderStrategyContext(item) {
+  if (!item.recommendedSurface && !item.viralThesis && !item.evidence && !item.trendSignal && !item.sourceUrl) return "";
+
+  return `<section class="strategy-context">
+    <div class="moment-grid">
+      ${renderMomentField("Recommended surface", item.recommendedSurface)}
+      ${renderMomentField("Viral thesis", item.viralThesis)}
+      ${renderMomentField("Evidence", item.evidence)}
+      ${renderMomentField("Trend signal", item.trendSignal)}
+      ${item.sourceUrl ? `<p><span>Source</span><a href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(item.sourceUrl)}</a></p>` : ""}
+    </div>
+  </section>`;
 }
 
 function renderFounderMomentContext(item) {
@@ -668,13 +705,18 @@ function renderAdvancedFields(item) {
           <option value="reply" ${item.type === "reply" ? "selected" : ""}>Reply</option>
         </select>
         <select name="format">
-          <option value="standard" ${item.format !== "founder-moment" ? "selected" : ""}>Standard</option>
+          <option value="standard" ${!["founder-moment", "community-post"].includes(item.format) ? "selected" : ""}>Standard</option>
           <option value="founder-moment" ${item.format === "founder-moment" ? "selected" : ""}>Founder moment</option>
+          <option value="community-post" ${item.format === "community-post" ? "selected" : ""}>Community post</option>
         </select>
       </div>
       <label class="check-row">
         <input type="checkbox" name="requiresManualAsset" ${item.requiresManualAsset ? "checked" : ""}>
         Needs manual image/video
+      </label>
+      <label class="check-row">
+        <input type="checkbox" name="requiresManualPublish" ${item.requiresManualPublish ? "checked" : ""}>
+        Needs manual publishing
       </label>
       <div class="row">
         <input name="replyToPostId" value="${escapeHtml(item.replyToPostId || "")}" placeholder="Reply post ID">
@@ -688,6 +730,10 @@ function renderAdvancedFields(item) {
       <textarea name="targetPostSummary" placeholder="Short summary of the post being replied to">${escapeHtml(item.targetPostSummary || "")}</textarea>
       <textarea name="targetPostText" placeholder="Original post text/context">${escapeHtml(item.targetPostText || "")}</textarea>
       <textarea name="replyRationale" placeholder="Why this reply is worth posting">${escapeHtml(item.replyRationale || "")}</textarea>
+      <input name="recommendedSurface" value="${escapeHtml(item.recommendedSurface || "")}" placeholder="Recommended surface">
+      <input name="sourceUrl" value="${escapeHtml(item.sourceUrl || "")}" placeholder="Source URL">
+      <textarea name="viralThesis" placeholder="Why this could travel">${escapeHtml(item.viralThesis || "")}</textarea>
+      <textarea name="evidence" placeholder="Evidence behind this recommendation">${escapeHtml(item.evidence || "")}</textarea>
       <textarea name="trendSignal" placeholder="Trend signal behind this idea">${escapeHtml(item.trendSignal || "")}</textarea>
       <textarea name="whyNow" placeholder="Why this is worth posting now">${escapeHtml(item.whyNow || "")}</textarea>
       <textarea name="visualBrief" placeholder="Photo/video to capture">${escapeHtml(item.visualBrief || "")}</textarea>
@@ -729,7 +775,7 @@ function renderActions(item) {
   const convertToPost = renderAction(item, "convert-to-post", "Convert to post");
   const manualPosted = renderAction(item, "manual-posted", "Mark posted manually");
 
-  if (item.format === "founder-moment" || item.requiresManualAsset) {
+  if (item.format === "founder-moment" || item.format === "community-post" || item.requiresManualAsset || item.requiresManualPublish) {
     if (item.status === "rejected") return `${draft}${remove}`;
     return `${save}${manualPosted}${reject}`;
   }
@@ -856,7 +902,9 @@ function renderHead(title) {
     .target-context p { font-size: 14px; line-height: 1.4; }
     .target-context span { display: block; color: var(--muted); font-size: 12px; font-weight: 900; margin-bottom: 2px; }
     .target-context blockquote { margin: 0; border-left: 3px solid #c8bea9; padding-left: 10px; color: #3d4644; font-size: 14px; line-height: 1.45; }
-    .moment-context { border: 1px solid #e1c994; border-radius: 8px; background: #fff9eb; padding: 13px; margin: 10px 0 12px; }
+    .strategy-context, .moment-context { border: 1px solid #d7d2c4; border-radius: 8px; background: #f8f5ed; padding: 13px; margin: 10px 0 12px; }
+    .strategy-context a { color: var(--blue); font-weight: 800; overflow-wrap: anywhere; }
+    .moment-context { border-color: #e1c994; background: #fff9eb; }
     .moment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     .moment-context p { font-size: 14px; line-height: 1.4; }
     .moment-context span { display: block; color: #7d5a1f; font-size: 12px; font-weight: 900; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0; }

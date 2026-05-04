@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createQueueItem, queuePath, updateQueue } from "./queue-store.mjs";
+import { refreshXAccessToken, XApiError } from "./x-client.mjs";
+import { readXTokenState, writeXTokenState } from "./x-token-store.mjs";
 
 const statePath = resolve(process.env.AGENT_STATE_PATH || join(dirname(queuePath), "agent-state.json"));
 const timeZone = process.env.AGENT_TIMEZONE || "America/Sao_Paulo";
@@ -9,6 +11,10 @@ const growthMinute = Number(process.env.GROWTH_PACK_MINUTE || 0);
 const momentHour = Number(process.env.FOUNDER_MOMENT_HOUR || 10);
 const momentMinute = Number(process.env.FOUNDER_MOMENT_MINUTE || 30);
 const schedulerIntervalMs = Number(process.env.AGENT_SCHEDULER_INTERVAL_MS || 60_000);
+const targetHandles = (process.env.TARGET_X_HANDLES || "gregisenberg,noahkagan,george__mack,buildinpublic,openai,perplexity_ai,AnthropicAI")
+  .split(",")
+  .map((handle) => handle.trim().replace(/^@/, ""))
+  .filter(Boolean);
 
 let schedulerStarted = false;
 let schedulerRunning = false;
@@ -97,6 +103,10 @@ export async function generateFounderMoment({ force = false, reason = "manual", 
     source: "render-founder-moment",
     requiresManualAsset: true,
     title: signal.title,
+    recommendedSurface: signal.recommendedSurface,
+    viralThesis: signal.viralThesis,
+    evidence: signal.evidence,
+    sourceUrl: signal.sourceUrl,
     trendSignal: signal.trendSignal,
     whyNow: signal.whyNow,
     visualBrief: signal.visualBrief,
@@ -132,41 +142,82 @@ export async function readAgentState() {
 }
 
 function buildGrowthPackItems(today, signals) {
-  const primarySignal = signals[0]?.label || "AI agents are making solo founders faster";
-  const communitySignal = signals[1]?.label || "build-in-public works best when updates are tied to real progress";
+  const xSignals = signals.filter((signal) => signal.kind === "x-post");
+  const primarySignal = signals[0] || { label: "AI agents are making solo founders faster", source: "fallback" };
+  const communitySignal =
+    signals.find((signal) => signal.kind === "community") ||
+    signals[1] ||
+    { label: "build-in-public works best when updates are tied to real progress", source: "fallback" };
+  const replyTargets = xSignals.filter((signal) => signal.replyToPostId && signal.replySettings === "everyone").slice(0, 2);
 
-  return [
+  const items = [
     {
       type: "post",
-      text: trimPost(`AI agents make it easier to ship alone.\n\nThat changes the real bottleneck for solo founders.\n\nIt is no longer just \"can I build this?\"\n\nIt is \"can I explain what changed clearly enough that people want to follow the journey?\"`)
+      recommendedSurface: "Stride OS profile",
+      viralThesis: "Contrarian and founder-specific: it pushes against the generic AI speed narrative and names the new bottleneck.",
+      evidence: evidenceFor(primarySignal),
+      sourceUrl: primarySignal.url,
+      trendSignal: primarySignal.label,
+      text: trimPost(`AI makes the first build easier.\n\nThat is not the same as making the founder easier to trust.\n\nThe new bottleneck for solo founders is clarity:\nwhat changed, what moved, what broke, and why anyone should keep watching.`)
     },
     {
       type: "post",
-      text: trimPost(`Today's founder signal: ${primarySignal}.\n\nThe faster we ship, the easier it is to lose the thread.\n\nA good weekly update turns scattered progress into one clear story.`)
+      recommendedSurface: "Stride OS profile",
+      viralThesis: "Stage transparency feels more credible than polished product claims and can attract builders who want the real process.",
+      evidence: "Stride OS is currently landing page plus active project, so the post is grounded in the actual build rather than pretending the full product is done.",
+      sourceUrl: "https://getstrideos.com",
+      trendSignal: "Founders respond to honest process when the product is still being built.",
+      text: trimPost(`Current Stride OS status:\n\nlanding page live\nproduct still being built\nsocial agent working before the core app is polished\n\nIt feels backwards, but maybe that is the point.\n\nDistribution is part of the product now.`)
     },
     {
       type: "post",
-      text: trimPost(`A weekly founder update should not start from \"what should I post?\"\n\nIt should start from:\n\nwhat shipped\nwhat moved\nwhat broke\nwhat changed in the numbers\nwhat I learned\n\nThat is the difference between content and operating in public.`)
-    },
-    {
-      type: "post",
-      text: trimPost(`I am building Stride OS because I think solo founders need fewer blank pages and more weekly rhythm.\n\nConnect the numbers.\nAnswer the real questions.\nShip the update.\n\nThat should be a habit, not a content sprint.`)
-    },
-    {
-      type: "post",
-      text: trimPost(`${communitySignal}.\n\nThat is the part of build in public I care about most:\n\nnot looking busy, but making the work legible.`)
+      format: "community-post",
+      requiresManualPublish: true,
+      recommendedSurface: "X build-in-public community",
+      viralThesis: "Question format invites other builders to compare workflows; this is optimized for replies and relationship, not a direct pitch.",
+      evidence: evidenceFor(communitySignal),
+      sourceUrl: "https://x.com/i/communities/1493446837214187523",
+      trendSignal: communitySignal.label,
+      text: trimPost(`Question for builders here:\n\nwhen you post a weekly update, where does it start?\n\n1. memory\n2. changelog\n3. metrics\n4. screenshots\n5. whatever feels important that day\n\nI am trying to understand the real workflow behind consistent build in public.`)
     }
-  ].map((item) => ({ ...item, trendSignal: primarySignal, generatedForDate: today }));
+  ];
+
+  for (const target of replyTargets) {
+    items.push({
+      type: "reply",
+      replyToPostId: target.replyToPostId,
+      targetAuthor: target.targetAuthor,
+      targetHandle: target.targetHandle,
+      targetPostUrl: target.targetPostUrl,
+      targetPostText: target.targetPostText,
+      targetPostSummary: target.targetPostSummary,
+      replyRationale: `Relevant ${target.targetHandle} post with public replies open; reply adds the Stride OS worldview without pitching.`,
+      recommendedSurface: `Reply to ${target.targetHandle}`,
+      viralThesis: "Replying to a high-signal large-account post can create discovery; the reply is framed as a founder insight, not a product ad.",
+      evidence: evidenceFor(target),
+      sourceUrl: target.targetPostUrl,
+      trendSignal: target.label,
+      text: trimPost(replyTextFor(target))
+    });
+  }
+
+  while (items.length < 5) {
+    items.push(nextProfilePost(items.length, communitySignal));
+  }
+
+  return items.slice(0, 5).map((item) => ({ ...item, generatedForDate: today }));
 }
 
 async function collectTrendSignals() {
   const fallback = [
-    { label: "AI agents are making solo founders faster", source: "fallback" },
-    { label: "real progress beats polished founder theater", source: "fallback" }
+    { label: "AI agents are making solo founders faster", source: "fallback", kind: "trend" },
+    { label: "real progress beats polished founder theater", source: "fallback", kind: "community" }
   ];
 
   const queries = ["AI agents solo founder SaaS", "build in public SaaS founder metrics"];
   const signals = [];
+
+  signals.push(...(await collectXSignals()));
 
   for (const query of queries) {
     try {
@@ -176,40 +227,221 @@ async function collectTrendSignals() {
       const json = await response.json();
       const hit = json.hits?.find((candidate) => candidate.title || candidate.story_title);
       const title = hit?.title || hit?.story_title;
-      if (title) signals.push({ label: title, source: "hn", url: hit.url || hit.story_url || "" });
+      if (title) signals.push({ label: title, source: "hn", kind: "trend", url: hit.url || hit.story_url || "" });
     } catch {
       // Fallback signals keep the agent reliable when source fetches fail.
     }
   }
 
-  return signals.length > 0 ? signals.slice(0, 2) : fallback;
+  return signals.length > 0 ? signals.slice(0, 6) : fallback;
+}
+
+async function collectXSignals() {
+  const tokenState = await getFreshXTokenState();
+  if (!tokenState.accessToken) return [];
+
+  const signals = [];
+
+  for (const handle of targetHandles) {
+    try {
+      const user = await xFetchJson(
+        `https://api.x.com/2/users/by/username/${encodeURIComponent(handle)}?user.fields=public_metrics,verified`,
+        tokenState
+      );
+      const userId = user?.data?.id;
+      if (!userId) continue;
+
+      const tweets = await xFetchJson(
+        `https://api.x.com/2/users/${userId}/tweets?max_results=5&exclude=retweets,replies&tweet.fields=created_at,public_metrics,reply_settings,conversation_id`,
+        tokenState
+      );
+
+      for (const tweet of tweets?.data || []) {
+        const metrics = tweet.public_metrics || {};
+        const text = normalizeTweetText(tweet.text || "");
+        const relevant = isRelevantTweet(text);
+        if (!relevant) continue;
+
+        const handleWithAt = `@${handle}`;
+        const score =
+          Number(metrics.like_count || 0) +
+          Number(metrics.reply_count || 0) * 4 +
+          Number(metrics.retweet_count || 0) * 3 +
+          Number(metrics.quote_count || 0) * 3;
+
+        signals.push({
+          kind: handle === "buildinpublic" ? "community" : "x-post",
+          label: `${handleWithAt}: ${text.slice(0, 120)}`,
+          source: "x",
+          url: `https://x.com/${handle}/status/${tweet.id}`,
+          targetPostUrl: `https://x.com/${handle}/status/${tweet.id}`,
+          replyToPostId: tweet.id,
+          targetAuthor: user.data.name || handleWithAt,
+          targetHandle: handleWithAt,
+          targetPostText: text,
+          targetPostSummary: summarizeTweet(text),
+          replySettings: tweet.reply_settings || "unknown",
+          metrics,
+          score
+        });
+      }
+    } catch (error) {
+      console.warn(`Could not collect X signals for ${handle}:`, error.message);
+    }
+  }
+
+  return signals.sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4);
+}
+
+async function getFreshXTokenState() {
+  const tokenState = await readXTokenState();
+  if (!tokenState.accessToken) return tokenState;
+
+  return tokenState;
+}
+
+async function xFetchJson(url, tokenState) {
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${tokenState.accessToken}`,
+      Accept: "application/json"
+    }
+  });
+  const json = await response.json().catch(() => ({}));
+
+  if (response.status === 401 && tokenState.refreshToken) {
+    const refreshed = await refreshXAccessToken({
+      refreshToken: tokenState.refreshToken,
+      clientId: process.env.X_CLIENT_ID,
+      clientSecret: process.env.X_CLIENT_SECRET
+    });
+    tokenState.accessToken = refreshed.accessToken;
+    tokenState.refreshToken = refreshed.refreshToken;
+    tokenState.refreshedAt = new Date().toISOString();
+    await writeXTokenState(tokenState);
+    return xFetchJson(url, tokenState);
+  }
+
+  if (!response.ok) {
+    throw new XApiError(response.status, json, `X API returned ${response.status}`);
+  }
+
+  return json;
+}
+
+function evidenceFor(signal) {
+  if (!signal) return "";
+  if (signal.source === "x") {
+    const metrics = signal.metrics || {};
+    const metricText = [
+      metrics.like_count ? `${metrics.like_count} likes` : "",
+      metrics.reply_count ? `${metrics.reply_count} replies` : "",
+      metrics.retweet_count ? `${metrics.retweet_count} reposts` : ""
+    ]
+      .filter(Boolean)
+      .join(", ");
+    return `${signal.targetHandle || "X"} post about a relevant founder/AI/build-in-public topic${metricText ? ` with ${metricText}` : ""}.`;
+  }
+  if (signal.source === "hn") return `Recent Hacker News signal: ${signal.label}.`;
+  return `Strategic fit with Stride OS: ${signal.label}.`;
+}
+
+function replyTextFor(signal) {
+  const text = (signal.targetPostText || "").toLowerCase();
+  if (text.includes("agent") || text.includes("ai")) {
+    return "The underrated shift is that AI makes shipping faster, but clarity becomes more valuable.\n\nSolo founders still need a rhythm for what changed, what moved, and what is worth sharing.";
+  }
+  if (text.includes("distribution") || text.includes("audience")) {
+    return "This is the part founders underestimate.\n\nDistribution gets easier when the weekly story is tied to real progress, not just opinions or polished launch posts.";
+  }
+  return "The best build-in-public updates usually do not feel like content.\n\nThey feel like a clear operating note: what changed, what was learned, and what happens next.";
+}
+
+function normalizeTweetText(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function isRelevantTweet(text) {
+  const lower = text.toLowerCase();
+  return [
+    "solo founder",
+    "founder",
+    "build in public",
+    "building in public",
+    "saas",
+    "startup",
+    "distribution",
+    "ai agent",
+    "agents",
+    "ship",
+    "shipping",
+    "audience",
+    "revenue",
+    "mrr"
+  ].some((keyword) => lower.includes(keyword));
+}
+
+function summarizeTweet(text) {
+  if (text.length <= 180) return text;
+  return `${text.slice(0, 177).trimEnd()}...`;
 }
 
 function pickFounderMomentSignal(today) {
   const options = [
     {
-      title: "The 5 questions behind my weekly update",
-      trendSignal: "AI agents are accelerating shipping, but founders still need a repeatable way to turn real progress into public updates.",
-      whyNow: "The current AI-agent conversation is full of speed. A real behind-the-scenes shot reframes Stride OS around clarity and rhythm.",
-      visualBrief: "Take a real desk or laptop photo with Stride OS open to the five weekly questions and a draft update. Hide or blur any Stripe/customer data.",
-      captureInstruction: "Open the weekly questions and draft output. Put notes or a coffee nearby if natural. Blur numbers, customer names, invoices, and any identifiers. Use the least-polished real shot.",
-      postingNotes: "Post as a builder note. Keep the photo honest and avoid adding a marketing banner.",
-      imageAlt: "Laptop showing a weekly founder check-in with five questions and a generated draft update, with sensitive data hidden.",
-      text: "AI agents help me ship faster, but the hard part is still sharing progress without founder-theater.\n\nMy weekly rhythm:\nconnect Stripe -> answer 5 questions -> get a draft update -> tweak in my voice.\n\nReal inputs > vague updates."
+      title: "Landing page before product",
+      recommendedSurface: "Manual post on Stride OS profile",
+      viralThesis: "A real laptop/workspace photo makes the early-stage build tangible and avoids the generic AI-generated founder advice pattern.",
+      evidence: "The product is still in development, while the landing page and social agent already exist. That tension is the story.",
+      sourceUrl: "https://getstrideos.com",
+      trendSignal: "Founders are using AI to ship faster, but distribution and narrative now start before the full product is finished.",
+      whyNow: "Stride OS is honestly still landing page plus active project. Showing that stage makes the build feel real and avoids overclaiming.",
+      visualBrief: "Take a photo of your laptop with the Stride OS landing page open and your project/editor or notes visible beside it. Do not show fake product screens.",
+      captureInstruction: "Open getstrideos.com on one side and your actual project workspace or notes on the other. Hide secrets, tokens, private tabs, and anything customer-related. Use a normal desk photo, not a polished mockup.",
+      postingNotes: "Frame it as a real build note: landing page is live, product is in progress, and you are building the distribution engine in public. Do not imply the full app is launched.",
+      imageAlt: "Laptop showing the Stride OS landing page beside project notes or code, with private details hidden.",
+      text: "Current Stride OS reality:\n\nlanding page is live\nproduct is still being built\nI am building the distribution system in public too\n\nIt feels early because it is.\n\nBut I want the story to compound while the product does."
     },
     {
-      title: "Numbers before content",
-      trendSignal: "Build-in-public conversations keep drifting toward content tactics, while founders still need operating signal.",
-      whyNow: "A simple photo of numbers hidden + notes visible makes the point that the update starts from reality, not a content prompt.",
-      visualBrief: "Photo of your laptop with Stripe blurred on one side and Stride OS / notes on the other.",
-      captureInstruction: "Hide all Stripe values and customer details. Keep only the shape of the workflow visible: metrics -> notes -> draft.",
-      postingNotes: "Caption should feel like a lesson learned while building, not a launch announcement.",
-      imageAlt: "Laptop workflow showing blurred Stripe metrics beside notes for a founder update.",
-      text: "I keep coming back to this: founder updates get better when they start with reality.\n\nNot content ideas.\nNot vague momentum.\n\nNumbers, shipped work, lessons, then the story."
+      title: "The messy founder operating note",
+      recommendedSurface: "Manual post on Stride OS profile",
+      viralThesis: "Unpolished proof-of-work photos can create more trust than abstract build-in-public advice because they show the founder is actually in the work.",
+      evidence: "Stride OS is currently an active project with the core product still being built, so the most honest content is the operating note behind the product.",
+      sourceUrl: "https://getstrideos.com",
+      trendSignal: "Build-in-public posts that show unfinished work can outperform generic advice because they create proof of work and invite builders into the process.",
+      whyNow: "The main Stride OS app is still in development, so the strongest visual is the honest operating layer: notes, landing page, tasks, and decisions.",
+      visualBrief: "Photo of a notebook or laptop note with the five questions you want Stride OS to ask each week. Put the landing page in the background if possible.",
+      captureInstruction: "Write the five questions on paper or in a notes app. Keep the product unfinishedness visible but not chaotic. Hide private information.",
+      postingNotes: "Make the caption about the insight behind the product, not a feature announcement.",
+      imageAlt: "Founder notes showing five weekly build-in-public questions with the Stride OS landing page in the background.",
+      text: "I do not have the full Stride OS app polished yet.\n\nBut the core idea keeps getting clearer:\n\nfounder updates should start from what actually changed that week.\n\nThe product is being built around that ritual."
     }
   ];
 
   return options[hashDate(today) % options.length];
+}
+
+function nextProfilePost(index, communitySignal) {
+  const posts = [
+    {
+      viralThesis: "Checklist posts are saveable and reply-friendly, but this one is tied to operating rhythm instead of generic content advice.",
+      evidence: "This maps directly to Stride OS: Stripe data plus five weekly questions before generating a public update.",
+      trendSignal: "Build in public works better when the update starts from evidence.",
+      text: trimPost(`A weekly founder update should not start from \"what should I post?\"\n\nIt should start from:\n\nwhat shipped\nwhat moved\nwhat broke\nwhat changed in the numbers\nwhat I learned\n\nThat is the difference between content and operating in public.`)
+    },
+    {
+      viralThesis: "Anti-theater framing attracts builders tired of generic build-in-public advice.",
+      evidence: evidenceFor(communitySignal),
+      sourceUrl: communitySignal.url,
+      trendSignal: communitySignal.label,
+      text: trimPost(`Build in public gets weird when it becomes performance.\n\nThe useful version is quieter:\n\nwhat changed\nwhat you tried\nwhat the numbers said\nwhat you are doing next\n\nThat is the story I want Stride OS to help founders tell.`)
+    }
+  ];
+  return {
+    type: "post",
+    recommendedSurface: "Stride OS profile",
+    ...posts[index % posts.length]
+  };
 }
 
 async function writeAgentState(state) {
