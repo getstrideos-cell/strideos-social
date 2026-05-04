@@ -68,6 +68,10 @@ const server = createServer(async (req, res) => {
       return handleCreateItem(req, res);
     }
 
+    if (url.pathname === "/archive/delete-rejected" && req.method === "POST") {
+      return handleDeleteRejected(res);
+    }
+
     const itemAction = url.pathname.match(/^\/items\/([^/]+)\/(approve|reject|draft|update|publish|delete|convert-to-post|manual-posted)$/);
     if (itemAction && req.method === "POST") {
       const [, id, action] = itemAction;
@@ -121,7 +125,7 @@ function validateApiQueueItem(item, index) {
   const errors = [];
   const label = `items[${index}]`;
 
-    if (item.type === "reply") {
+  if (item.type === "reply") {
     if (!item.replyToPostId || item.replyToPostId === "REPLACE_WITH_X_POST_ID") {
       errors.push(`${label}.replyToPostId is required for contextual replies.`);
     }
@@ -188,6 +192,13 @@ async function handleCreateItem(req, res) {
         source: "dashboard"
       })
     );
+  });
+  return redirect(res, "/");
+}
+
+async function handleDeleteRejected(res) {
+  await updateQueue((queue) => {
+    queue.items = queue.items.filter((item) => item.status !== "rejected");
   });
   return redirect(res, "/");
 }
@@ -392,6 +403,13 @@ function renderDashboard(queue, options) {
   const needsReview = queue.items.filter((item) => ["draft", "failed"].includes(item.status) && !isFounderMoment(item));
   const approved = queue.items.filter((item) => item.status === "approved");
   const archive = queue.items.filter((item) => ["published", "rejected"].includes(item.status));
+  const rejectedCount = queue.items.filter((item) => item.status === "rejected").length;
+  const archiveActions =
+    rejectedCount > 0
+      ? `<form method="post" action="/archive/delete-rejected" onsubmit="return confirm('Delete all rejected drafts? Published items will stay in the archive.');">
+          <button class="delete compact" type="submit">Delete rejected</button>
+        </form>`
+      : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -467,7 +485,7 @@ ${renderHead("Stride OS Publisher")}
     ${renderItemSection("Founder Moments", "Manual image ideas only you can create: photo brief, context, and caption.", founderMoments, "moments")}
     ${renderItemSection("Needs Review", "Edit, approve, or reject these before anything can publish.", needsReview, "review")}
     ${renderItemSection("Approved", "Ready to publish. In live mode, the publish button posts to X.", approved, "approved")}
-    ${renderItemSection("Archive", "Published, rejected, and deleted candidates stay out of the review flow.", archive, "archive", true)}
+    ${renderItemSection("Archive", "Published and rejected items stay out of the review flow.", archive, "archive", true, archiveActions)}
   </main>
 </body>
 </html>`;
@@ -510,7 +528,7 @@ function renderItem(item) {
   </article>`;
 }
 
-function renderItemSection(title, description, items, kind, collapsed = false) {
+function renderItemSection(title, description, items, kind, collapsed = false, actions = "") {
   const head = `<div class="section-head">
       <div>
         <h2>${escapeHtml(title)}</h2>
@@ -518,6 +536,7 @@ function renderItemSection(title, description, items, kind, collapsed = false) {
       </div>
       <strong>${items.length}</strong>
     </div>`;
+  const actionBar = actions ? `<div class="section-actions">${actions}</div>` : "";
   const body = `<div class="items">
       ${items.map((item) => renderItem(item)).join("") || `<p class="empty">Nothing here.</p>`}
     </div>`;
@@ -525,12 +544,14 @@ function renderItemSection(title, description, items, kind, collapsed = false) {
   if (collapsed) {
     return `<details class="queue-section collapsible ${escapeHtml(kind)}">
       <summary>${head}</summary>
+      ${actionBar}
       ${body}
     </details>`;
   }
 
   return `<section class="queue-section ${escapeHtml(kind)}">
     ${head}
+    ${actionBar}
     ${body}
   </section>`;
 }
@@ -729,6 +750,7 @@ function renderHead(title) {
     .queue-section.collapsible > summary::-webkit-details-marker { display: none; }
     .section-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 10px; }
     .section-head p { color: var(--muted); font-size: 14px; line-height: 1.4; margin-top: 4px; }
+    .section-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 0 0 10px; }
     .section-head strong { min-width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; background: #e5dfd2; font-size: 14px; }
     .row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; }
     .item { position: relative; overflow: hidden; }
@@ -775,6 +797,8 @@ function renderHead(title) {
       .brand-row { align-items: flex-start; }
       .top-actions { justify-content: space-between; }
       .status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .section-head { align-items: stretch; flex-direction: column; }
+      .section-actions { justify-content: stretch; }
       .row { grid-template-columns: 1fr; }
       .moment-grid { grid-template-columns: 1fr; }
       .item-head { flex-direction: column; }
