@@ -45,12 +45,16 @@ Create a `.env` file based on `.env.example`:
 
 ```bash
 X_USER_ACCESS_TOKEN=your_oauth2_user_access_token
+X_REFRESH_TOKEN=your_oauth2_refresh_token
+X_CLIENT_ID=your_oauth2_client_id
+X_CLIENT_SECRET=your_oauth2_client_secret
 DRY_RUN=true
 ADMIN_PASSWORD=your-dashboard-password
 SESSION_SECRET=a-long-random-string
 ```
 
-Use an OAuth 2.0 user access token with `tweet.write` permission.
+Use OAuth 2.0 credentials with `tweet.read`, `tweet.write`, `users.read`, and `offline.access`.
+When X returns an expired-token `401`, the publisher uses the refresh token to renew the access token and stores the rotated token beside the queue file.
 
 ## Dashboard
 

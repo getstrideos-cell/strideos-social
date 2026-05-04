@@ -5,6 +5,7 @@
 .x-user-access-token
 .x-refresh-token
 .x-*
+content/x-token.json
 node_modules/
 .DS_Store
 npm-debug.log*
