@@ -6,6 +6,8 @@ import { readXTokenState, writeXTokenState } from "./x-token-store.mjs";
 
 const statePath = resolve(process.env.AGENT_STATE_PATH || join(dirname(queuePath), "agent-state.json"));
 const timeZone = process.env.AGENT_TIMEZONE || "America/Sao_Paulo";
+const boardHour = Number(process.env.FOUNDER_BOARD_HOUR || 8);
+const boardMinute = Number(process.env.FOUNDER_BOARD_MINUTE || 30);
 const growthHour = Number(process.env.GROWTH_PACK_HOUR || 9);
 const growthMinute = Number(process.env.GROWTH_PACK_MINUTE || 0);
 const momentHour = Number(process.env.FOUNDER_MOMENT_HOUR || 10);
@@ -42,6 +44,10 @@ export async function runDueRenderAgents(now = new Date()) {
   const local = getLocalTimeParts(now);
   const results = [];
 
+  if (isWithinScheduleWindow(local, boardHour, boardMinute)) {
+    results.push(await generateFounderBoard({ reason: "schedule", now }));
+  }
+
   if (isWithinScheduleWindow(local, growthHour, growthMinute)) {
     results.push(await generateDailyGrowthPack({ reason: "schedule", now }));
   }
@@ -61,7 +67,8 @@ export async function generateDailyGrowthPack({ force = false, reason = "manual"
     return { agent: "growth-pack", status: "skipped", date: today, reason: "already-created" };
   }
 
-  const signals = await collectTrendSignals();
+  const board = await ensureFounderBoard(today, now);
+  const signals = board?.signals || (await collectTrendSignals());
   const items = buildGrowthPackItems(today, signals).map((item) =>
     createQueueItem({
       ...item,
@@ -80,11 +87,29 @@ export async function generateDailyGrowthPack({ force = false, reason = "manual"
     reason,
     createdAt: now.toISOString(),
     count: items.length,
+    boardDate: board?.date || "",
     signals
   };
   await writeAgentState(latestState);
 
   return { agent: "growth-pack", status: "created", date: today, count: items.length };
+}
+
+export async function generateFounderBoard({ force = false, reason = "manual", now = new Date() } = {}) {
+  const today = getLocalDateKey(now);
+  const state = await readAgentState();
+
+  if (!force && state.founderBoard?.date === today) {
+    return { agent: "founder-board", status: "skipped", date: today, reason: "already-created" };
+  }
+
+  const signals = await collectTrendSignals();
+  const board = buildFounderBoard(today, signals, now, reason);
+  const latestState = await readAgentState();
+  latestState.founderBoard = board;
+  await writeAgentState(latestState);
+
+  return { agent: "founder-board", status: "created", date: today, signals: signals.length };
 }
 
 export async function generateFounderMoment({ force = false, reason = "manual", now = new Date() } = {}) {
@@ -141,6 +166,101 @@ export async function readAgentState() {
   }
 }
 
+async function ensureFounderBoard(today, now) {
+  const state = await readAgentState();
+  if (state.founderBoard?.date === today) return state.founderBoard;
+
+  const result = await generateFounderBoard({ reason: "growth-pack-dependency", now });
+  if (result.status === "skipped") {
+    return (await readAgentState()).founderBoard;
+  }
+
+  return (await readAgentState()).founderBoard;
+}
+
+function buildFounderBoard(today, signals, now, reason) {
+  const primarySignal = signals[0] || { label: "solo founders are using AI to ship and distribute faster", source: "fallback" };
+  const communitySignal =
+    signals.find((signal) => signal.kind === "community") ||
+    signals.find((signal) => signal.label?.toLowerCase().includes("build")) ||
+    primarySignal;
+  const aiSignal =
+    signals.find((signal) => /ai|agent|claude|openai|anthropic/i.test(signal.label || "")) ||
+    primarySignal;
+
+  return {
+    date: today,
+    reason,
+    createdAt: now.toISOString(),
+    stage: "Landing page live. Core Stride OS product still in development. Social agent and approval workflow are the first working wedge.",
+    signals,
+    marketRadar: {
+      title: "Market Radar",
+      summary: "Solo founders are paying attention to AI leverage, distribution, and proof-of-work. The opportunity is to position Stride OS as the operating rhythm that turns real progress into public narrative.",
+      topSignals: signals.slice(0, 4).map((signal) => ({
+        label: signal.label,
+        source: signal.source,
+        url: signal.url || signal.targetPostUrl || "",
+        evidence: evidenceFor(signal)
+      })),
+      implication: "Do not market Stride OS as a polished automation toy. Market it as a founder operating layer that starts while the product is still being built."
+    },
+    marketingDirector: {
+      title: "Marketing Director",
+      distributionBet: "Make X the proof channel, then reuse the best ideas in the build-in-public community and founder-focused Reddit posts.",
+      reasoning: `The strongest current angle is ${primarySignal.label}. Stride OS can enter that conversation by showing how a solo founder turns progress into distribution without sounding like a content machine.`,
+      recommendedActions: [
+        "Publish one profile post that names the current stage honestly: landing page live, product in development, distribution system being built in public.",
+        "Leave one thoughtful reply on a large-account post about AI agents, solo founders, distribution, or shipping.",
+        "Post one non-promotional question in the build-in-public community to learn how founders currently create weekly updates."
+      ],
+      experiment: {
+        name: "Proof before product",
+        hypothesis: "Honest early-stage proof-of-work will get better replies than polished product claims.",
+        metric: "Replies from solo founders, profile visits, and landing page clicks.",
+        duration: "7 days"
+      },
+      risk: "If every post points directly to Stride OS, it will feel like promotion. Keep most posts framed as founder operating lessons."
+    },
+    productDirector: {
+      title: "Product Director",
+      productBet: "Build the weekly founder update ritual before adding broad analytics or many channels.",
+      reasoning: "The core product value is not writing tweets. It is helping a solo founder know what changed, explain it clearly, and build a distribution habit around real business data.",
+      roadmapNow: [
+        "Weekly check-in flow: Stripe snapshot plus five founder questions.",
+        "Approval queue with evidence, surface, and rationale for every draft.",
+        "Learning loop: after publishing, capture what got replies/clicks and feed it back into next week's recommendations."
+      ],
+      roadmapLater: [
+        "Reddit and community-specific posting flows.",
+        "Landing page conversion recommendations from comments and objections.",
+        "Product feedback inbox that turns replies into roadmap suggestions."
+      ],
+      risk: "Do not overbuild the executive-agent metaphor before the weekly update loop feels obviously useful."
+    },
+    chiefOfStaff: {
+      title: "Chief of Staff",
+      todayFocus: "Use the board to produce one public proof-of-work post, one community learning post, and one high-context reply.",
+      decisions: [
+        "Keep Stride OS honest about stage: landing page and active project, not full app launch.",
+        "Prioritize distribution learning over feature breadth this week.",
+        "Treat replies and community posts as market research, not just engagement."
+      ],
+      nextMove: "Generate the growth pack, approve only the drafts with evidence, and reject anything that feels like generic build-in-public advice."
+    },
+    growthExperiment: {
+      title: "Growth Experiment",
+      name: "Founder Board narrative",
+      channel: "X profile plus build-in-public community",
+      hypothesis: "A solo founder publicly building with an AI founder board is more memorable than another SaaS scheduling tool.",
+      action: "Post a transparent build note about adding Marketing Director and Product Director agents to Stride OS.",
+      evidence: evidenceFor(aiSignal),
+      sourceUrl: aiSignal.url || aiSignal.targetPostUrl || "",
+      successMetric: "At least one qualified founder reply, DM, or landing click."
+    }
+  };
+}
+
 function buildGrowthPackItems(today, signals) {
   const xSignals = signals.filter((signal) => signal.kind === "x-post");
   const primarySignal = signals[0] || { label: "AI agents are making solo founders faster", source: "fallback" };
@@ -168,6 +288,14 @@ function buildGrowthPackItems(today, signals) {
       sourceUrl: "https://getstrideos.com",
       trendSignal: "Founders respond to honest process when the product is still being built.",
       text: trimPost(`Current Stride OS status:\n\nlanding page live\nproduct still being built\nsocial agent working before the core app is polished\n\nIt feels backwards, but maybe that is the point.\n\nDistribution is part of the product now.`)
+    },
+    {
+      type: "post",
+      recommendedSurface: "Stride OS profile",
+      viralThesis: "The AI executive-board angle is more ownable than generic build-in-public advice and makes Stride OS feel bigger than a post generator.",
+      evidence: "Stride OS now has Market Radar feeding Marketing Director and Product Director recommendations before content drafts are created.",
+      trendSignal: "Solo founders are looking for leverage that feels like an operating team, not just isolated AI prompts.",
+      text: trimPost(`I am adding a tiny founder board to Stride OS:\n\nMarket Radar -> Marketing Director -> Product Director -> content agents\n\nThe goal is not more posts.\n\nThe goal is better founder decisions that turn into better public updates.`)
     },
     {
       type: "post",

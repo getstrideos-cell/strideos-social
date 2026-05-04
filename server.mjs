@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { loadEnv } from "./scripts/load-env.mjs";
 import { createQueueItem, readQueue, updateQueue } from "./scripts/queue-store.mjs";
 import { publishApproved } from "./scripts/publisher.mjs";
-import { generateDailyGrowthPack, generateFounderMoment, readAgentState, startRenderAgents } from "./scripts/render-agents.mjs";
+import { generateDailyGrowthPack, generateFounderBoard, generateFounderMoment, readAgentState, startRenderAgents } from "./scripts/render-agents.mjs";
 
 await loadEnv();
 
@@ -74,6 +74,10 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/agents/run/growth" && req.method === "POST") {
       return handleRunGrowthAgent(res);
+    }
+
+    if (url.pathname === "/agents/run/board" && req.method === "POST") {
+      return handleRunFounderBoardAgent(res);
     }
 
     if (url.pathname === "/agents/run/founder-moment" && req.method === "POST") {
@@ -222,6 +226,11 @@ async function handleDeleteRejected(res) {
 
 async function handleRunGrowthAgent(res) {
   await generateDailyGrowthPack({ force: true, reason: "dashboard" });
+  return redirect(res, "/");
+}
+
+async function handleRunFounderBoardAgent(res) {
+  await generateFounderBoard({ force: true, reason: "dashboard" });
   return redirect(res, "/");
 }
 
@@ -487,6 +496,7 @@ ${renderHead("Stride OS Publisher")}
     </section>
 
     ${renderAgentPanel(options.agentState)}
+    ${renderFounderBoard(options.agentState?.founderBoard)}
 
     <details class="composer">
       <summary>Add a draft manually</summary>
@@ -535,6 +545,7 @@ function renderMetric(label, value) {
 }
 
 function renderAgentPanel(agentState = {}) {
+  const board = agentState.founderBoard;
   const growth = agentState.growthPack;
   const moment = agentState.founderMoment;
 
@@ -542,13 +553,17 @@ function renderAgentPanel(agentState = {}) {
     <div>
       <p class="eyebrow">Render agents</p>
       <h2>Daily generators</h2>
-      <p>Runs inside Render at 09:00 and 10:30 America/Sao_Paulo. No notebook required.</p>
+      <p>Runs inside Render at 08:30, 09:00, and 10:30 America/Sao_Paulo. No notebook required.</p>
     </div>
     <div class="agent-status">
+      ${renderAgentStatus("Founder board", board, "08:30")}
       ${renderAgentStatus("Growth pack", growth, "09:00")}
       ${renderAgentStatus("Founder moment", moment, "10:30")}
     </div>
     <div class="actions">
+      <form method="post" action="/agents/run/board">
+        <button class="secondary" type="submit">Run founder board now</button>
+      </form>
       <form method="post" action="/agents/run/growth">
         <button class="secondary" type="submit">Run growth pack now</button>
       </form>
@@ -557,6 +572,111 @@ function renderAgentPanel(agentState = {}) {
       </form>
     </div>
   </section>`;
+}
+
+function renderFounderBoard(board) {
+  if (!board) {
+    return `<section class="boardroom empty-board">
+      <div class="board-head">
+        <div>
+          <p class="eyebrow">Founder Board</p>
+          <h2>AI directors</h2>
+          <p>No board memo yet. Run the founder board to create marketing, product, market, and execution guidance.</p>
+        </div>
+        <form method="post" action="/agents/run/board">
+          <button class="secondary" type="submit">Run founder board now</button>
+        </form>
+      </div>
+    </section>`;
+  }
+
+  return `<section class="boardroom">
+    <div class="board-head">
+      <div>
+        <p class="eyebrow">Founder Board</p>
+        <h2>Today's operating memo</h2>
+        <p>${escapeHtml(board.stage || "")}</p>
+      </div>
+      <div class="board-meta">
+        <span>${escapeHtml(board.date || "")}</span>
+        <small>${escapeHtml(formatTime(board.createdAt))}</small>
+      </div>
+    </div>
+    <div class="board-grid">
+      ${renderBoardCard(board.marketRadar)}
+      ${renderBoardCard(board.marketingDirector)}
+      ${renderBoardCard(board.productDirector)}
+      ${renderBoardCard(board.chiefOfStaff)}
+      ${renderGrowthExperiment(board.growthExperiment)}
+    </div>
+  </section>`;
+}
+
+function renderBoardCard(card = {}) {
+  if (!card.title) return "";
+  const rows = [
+    ["Summary", card.summary],
+    ["Implication", card.implication],
+    ["Distribution bet", card.distributionBet],
+    ["Product bet", card.productBet],
+    ["Reasoning", card.reasoning],
+    ["Today focus", card.todayFocus],
+    ["Risk", card.risk],
+    ["Next move", card.nextMove]
+  ];
+
+  return `<article class="board-card">
+    <h3>${escapeHtml(card.title)}</h3>
+    ${rows.map(([label, value]) => renderBoardField(label, value)).join("")}
+    ${renderBoardList("Signals", card.topSignals, renderSignalRow)}
+    ${renderBoardList("Recommended actions", card.recommendedActions)}
+    ${renderBoardExperiment(card.experiment)}
+    ${renderBoardList("Build now", card.roadmapNow)}
+    ${renderBoardList("Later", card.roadmapLater)}
+    ${renderBoardList("Decisions", card.decisions)}
+  </article>`;
+}
+
+function renderGrowthExperiment(experiment = {}) {
+  if (!experiment.title) return "";
+  return `<article class="board-card growth-experiment">
+    <h3>${escapeHtml(experiment.title)}</h3>
+    ${renderBoardField("Name", experiment.name)}
+    ${renderBoardField("Channel", experiment.channel)}
+    ${renderBoardField("Hypothesis", experiment.hypothesis)}
+    ${renderBoardField("Action", experiment.action)}
+    ${renderBoardField("Evidence", experiment.evidence)}
+    ${renderBoardField("Success metric", experiment.successMetric)}
+    ${experiment.sourceUrl ? `<p><span>Source</span><a href="${escapeHtml(experiment.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(experiment.sourceUrl)}</a></p>` : ""}
+  </article>`;
+}
+
+function renderBoardExperiment(experiment) {
+  if (!experiment) return "";
+  return `<div class="board-subcard">
+    <strong>${escapeHtml(experiment.name || "Experiment")}</strong>
+    ${renderBoardField("Hypothesis", experiment.hypothesis)}
+    ${renderBoardField("Metric", experiment.metric)}
+    ${renderBoardField("Duration", experiment.duration)}
+  </div>`;
+}
+
+function renderBoardField(label, value) {
+  if (!value) return "";
+  return `<p><span>${escapeHtml(label)}</span>${escapeHtml(value)}</p>`;
+}
+
+function renderBoardList(label, values, renderer = (value) => `<li>${escapeHtml(value)}</li>`) {
+  if (!Array.isArray(values) || values.length === 0) return "";
+  return `<div class="board-list">
+    <span>${escapeHtml(label)}</span>
+    <ul>${values.map((value) => renderer(value)).join("")}</ul>
+  </div>`;
+}
+
+function renderSignalRow(signal = {}) {
+  const source = signal.url ? `<a href="${escapeHtml(signal.url)}" target="_blank" rel="noreferrer">${escapeHtml(signal.source || "source")}</a>` : escapeHtml(signal.source || "source");
+  return `<li><strong>${escapeHtml(signal.label || "")}</strong><small>${source}${signal.evidence ? ` - ${escapeHtml(signal.evidence)}` : ""}</small></li>`;
 }
 
 function renderAgentStatus(label, state, schedule) {
@@ -864,6 +984,25 @@ function renderHead(title) {
     .agent-status p { border: 1px solid #e4dfd2; border-radius: 8px; background: #fffefa; padding: 10px 12px; color: var(--ink); }
     .agent-status span { display: block; font-size: 12px; font-weight: 900; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
     .agent-status small { display: block; color: var(--muted); margin-top: 2px; }
+    .boardroom { margin: 28px 0 18px; }
+    .board-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+    .board-head p { color: var(--muted); font-size: 14px; line-height: 1.4; margin-top: 4px; max-width: 820px; }
+    .board-meta { display: grid; justify-items: end; color: var(--muted); font-size: 13px; font-weight: 800; }
+    .board-meta span { color: var(--ink); font-size: 15px; }
+    .board-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .board-card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 15px; box-shadow: 0 1px 0 rgba(0,0,0,.02); }
+    .board-card h3 { font-size: 16px; margin: 0 0 10px; letter-spacing: 0; }
+    .board-card p { color: #26302e; font-size: 14px; line-height: 1.45; margin: 0 0 10px; }
+    .board-card p span, .board-list span { display: block; color: var(--muted); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0; margin-bottom: 3px; }
+    .board-list { margin-top: 10px; }
+    .board-list ul { margin: 0; padding-left: 18px; display: grid; gap: 7px; }
+    .board-list li { color: #26302e; font-size: 14px; line-height: 1.4; }
+    .board-list li small { display: block; color: var(--muted); margin-top: 2px; }
+    .board-card a { color: var(--blue); font-weight: 800; overflow-wrap: anywhere; }
+    .board-subcard { border-top: 1px solid #e4dfd2; padding-top: 10px; margin-top: 10px; }
+    .board-subcard strong { display: block; font-size: 14px; margin-bottom: 7px; }
+    .growth-experiment { border-color: #c7d6d0; background: #f8fcfa; }
+    .empty-board { border: 1px dashed #d4cbbb; border-radius: 8px; padding: 16px; background: rgba(255,253,250,.55); }
     .composer { padding: 0; overflow: hidden; }
     .composer summary { cursor: pointer; padding: 14px 16px; font-weight: 800; }
     .composer-body { border-top: 1px solid var(--line); padding: 16px; }
@@ -921,6 +1060,9 @@ function renderHead(title) {
     @media (max-width: 760px) {
       .topbar, .mode-banner { align-items: stretch; flex-direction: column; }
       .agent-panel { grid-template-columns: 1fr; }
+      .board-head { align-items: stretch; flex-direction: column; }
+      .board-meta { justify-items: start; }
+      .board-grid { grid-template-columns: 1fr; }
       .brand-row { align-items: flex-start; }
       .top-actions { justify-content: space-between; }
       .status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
