@@ -8,6 +8,8 @@
     "deploy:render": "node scripts/deploy-render.mjs",
     "start": "node server.mjs",
     "dev": "node server.mjs",
+    "generate:growth": "node -e \"import('./scripts/load-env.mjs').then(async ({ loadEnv }) => { await loadEnv(); const { generateDailyGrowthPack } = await import('./scripts/render-agents.mjs'); console.log(await generateDailyGrowthPack({ force: true, reason: 'cli' })); })\"",
+    "generate:moment": "node -e \"import('./scripts/load-env.mjs').then(async ({ loadEnv }) => { await loadEnv(); const { generateFounderMoment } = await import('./scripts/render-agents.mjs'); console.log(await generateFounderMoment({ force: true, reason: 'cli' })); })\"",
     "reject": "node scripts/set-status.mjs rejected",
     "publish:x": "node scripts/publish-approved.mjs",
     "queue:check": "node scripts/check-queue.mjs"

@@ -72,6 +72,26 @@ http://localhost:3000
 
 From the dashboard you can add drafts, edit text, approve, reject, and publish approved items.
 
+## Render Agents
+
+The hosted service can generate drafts by itself without the Codex desktop automation or your notebook.
+
+- Daily growth pack: runs around 09:00 America/Sao_Paulo and creates 5 text drafts.
+- Founder moment: runs around 10:30 America/Sao_Paulo and creates 1 manual image/photo suggestion.
+- Both write directly to the Render queue file, so they do not need to call the public dashboard API.
+- The dashboard also has manual buttons to run either generator immediately.
+
+Optional controls:
+
+```bash
+RENDER_AGENTS_ENABLED=false
+GROWTH_PACK_HOUR=9
+GROWTH_PACK_MINUTE=0
+FOUNDER_MOMENT_HOUR=10
+FOUNDER_MOMENT_MINUTE=30
+AGENT_TIMEZONE=America/Sao_Paulo
+```
+
 ## Commands
 
 Check queue:
@@ -102,6 +122,13 @@ Real publish:
 
 ```bash
 DRY_RUN=false npm run publish:x
+```
+
+Generate local drafts manually:
+
+```bash
+npm run generate:growth
+npm run generate:moment
 ```
 
 ## Safety Rules

@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { loadEnv } from "./scripts/load-env.mjs";
 import { createQueueItem, readQueue, updateQueue } from "./scripts/queue-store.mjs";
 import { publishApproved } from "./scripts/publisher.mjs";
+import { generateDailyGrowthPack, generateFounderMoment, readAgentState, startRenderAgents } from "./scripts/render-agents.mjs";
 
 await loadEnv();
 
@@ -30,6 +31,8 @@ if (publishIntervalMinutes > 0) {
     }
   }, publishIntervalMinutes * 60 * 1000);
 }
+
+startRenderAgents();
 
 const server = createServer(async (req, res) => {
   try {
@@ -61,11 +64,20 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/" && req.method === "GET") {
       const queue = await readQueue();
-      return sendHtml(res, renderDashboard(queue, { dryRun, publishIntervalMinutes }));
+      const agentState = await readAgentState();
+      return sendHtml(res, renderDashboard(queue, { dryRun, publishIntervalMinutes, agentState }));
     }
 
     if (url.pathname === "/items" && req.method === "POST") {
       return handleCreateItem(req, res);
+    }
+
+    if (url.pathname === "/agents/run/growth" && req.method === "POST") {
+      return handleRunGrowthAgent(res);
+    }
+
+    if (url.pathname === "/agents/run/founder-moment" && req.method === "POST") {
+      return handleRunFounderMomentAgent(res);
     }
 
     if (url.pathname === "/archive/delete-rejected" && req.method === "POST") {
@@ -200,6 +212,16 @@ async function handleDeleteRejected(res) {
   await updateQueue((queue) => {
     queue.items = queue.items.filter((item) => item.status !== "rejected");
   });
+  return redirect(res, "/");
+}
+
+async function handleRunGrowthAgent(res) {
+  await generateDailyGrowthPack({ force: true, reason: "dashboard" });
+  return redirect(res, "/");
+}
+
+async function handleRunFounderMomentAgent(res) {
+  await generateFounderMoment({ force: true, reason: "dashboard" });
   return redirect(res, "/");
 }
 
@@ -451,6 +473,8 @@ ${renderHead("Stride OS Publisher")}
       </form>
     </section>
 
+    ${renderAgentPanel(options.agentState)}
+
     <details class="composer">
       <summary>Add a draft manually</summary>
       <div class="composer-body">
@@ -494,6 +518,53 @@ ${renderHead("Stride OS Publisher")}
 function renderMetric(label, value) {
   const key = label.toLowerCase().replaceAll(" ", "-");
   return `<div class="metric ${escapeHtml(key)}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`;
+}
+
+function renderAgentPanel(agentState = {}) {
+  const growth = agentState.growthPack;
+  const moment = agentState.founderMoment;
+
+  return `<section class="agent-panel">
+    <div>
+      <p class="eyebrow">Render agents</p>
+      <h2>Daily generators</h2>
+      <p>Runs inside Render at 09:00 and 10:30 America/Sao_Paulo. No notebook required.</p>
+    </div>
+    <div class="agent-status">
+      ${renderAgentStatus("Growth pack", growth, "09:00")}
+      ${renderAgentStatus("Founder moment", moment, "10:30")}
+    </div>
+    <div class="actions">
+      <form method="post" action="/agents/run/growth">
+        <button class="secondary" type="submit">Run growth pack now</button>
+      </form>
+      <form method="post" action="/agents/run/founder-moment">
+        <button class="secondary" type="submit">Run founder moment now</button>
+      </form>
+    </div>
+  </section>`;
+}
+
+function renderAgentStatus(label, state, schedule) {
+  return `<p>
+    <span>${escapeHtml(label)}</span>
+    ${state?.date ? `Last: ${escapeHtml(state.date)} at ${escapeHtml(formatTime(state.createdAt))}` : "Last: never"}
+    <small>Schedule: ${escapeHtml(schedule)}</small>
+  </p>`;
+}
+
+function formatTime(value) {
+  if (!value) return "";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
 }
 
 function renderItem(item) {
@@ -734,12 +805,19 @@ function renderHead(title) {
     .mode-chip { display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px; border-radius: 999px; font-weight: 900; font-size: 13px; }
     .mode-chip.dry { background: #e7f1f5; color: #24556c; }
     .mode-chip.live { background: #fae3df; color: #8b2d25; }
-    .mode-banner, .composer, .item { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 0 rgba(0,0,0,.02); }
+    .mode-banner, .agent-panel, .composer, .item { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 0 rgba(0,0,0,.02); }
     .mode-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-left: 4px solid var(--blue); }
     .mode-banner strong { display: block; font-size: 15px; margin-bottom: 3px; }
     .mode-banner p { color: var(--muted); font-size: 14px; line-height: 1.4; }
     .mode-banner.dry { border-color: #c6d7de; background: #f5fbfd; }
     .mode-banner.live { border-color: #e1b8b2; background: #fff7f5; }
+    .agent-panel { display: grid; grid-template-columns: 1.1fr 1.4fr auto; gap: 14px; align-items: center; }
+    .agent-panel h2 { margin-bottom: 4px; }
+    .agent-panel p { color: var(--muted); font-size: 14px; line-height: 1.4; }
+    .agent-status { display: grid; gap: 8px; }
+    .agent-status p { border: 1px solid #e4dfd2; border-radius: 8px; background: #fffefa; padding: 10px 12px; color: var(--ink); }
+    .agent-status span { display: block; font-size: 12px; font-weight: 900; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
+    .agent-status small { display: block; color: var(--muted); margin-top: 2px; }
     .composer { padding: 0; overflow: hidden; }
     .composer summary { cursor: pointer; padding: 14px 16px; font-weight: 800; }
     .composer-body { border-top: 1px solid var(--line); padding: 16px; }
@@ -794,6 +872,7 @@ function renderHead(title) {
     .empty { color: var(--muted); padding: 26px 0; text-align: center; border: 1px dashed #d4cbbb; border-radius: 8px; background: rgba(255,253,250,.5); }
     @media (max-width: 760px) {
       .topbar, .mode-banner { align-items: stretch; flex-direction: column; }
+      .agent-panel { grid-template-columns: 1fr; }
       .brand-row { align-items: flex-start; }
       .top-actions { justify-content: space-between; }
       .status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
