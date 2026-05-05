@@ -595,7 +595,8 @@ function renderFounderBoard(board) {
       <div>
         <p class="eyebrow">Founder Board</p>
         <h2>Today's operating memo</h2>
-        <p>${escapeHtml(board.stage || "")}</p>
+        <p>${escapeHtml(board.stage || "")}${board.intelligence ? ` Intelligence: ${escapeHtml(board.intelligence)}.` : ""}</p>
+        ${board.openAIError ? `<p class="alert error">OpenAI enhancement failed: ${escapeHtml(board.openAIError)}</p>` : ""}
       </div>
       <div class="board-meta">
         <span>${escapeHtml(board.date || "")}</span>

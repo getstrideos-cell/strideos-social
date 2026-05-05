@@ -118,6 +118,16 @@ Connected sources:
 - Plausible or PostHog: reads landing/product analytics when keys are configured.
 - Internal feedback: uses approvals, rejections, failures, published queue history, and manual suggestions.
 
+Optional OpenAI enhancement:
+
+```bash
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-5-mini
+OPENAI_ENABLED=true
+```
+
+When `OPENAI_API_KEY` is configured, the Founder Board uses the OpenAI Responses API with Structured Outputs to improve the market memo, marketing strategy, product strategy, growth experiment, and daily draft recommendations. Without the key, the system keeps using the rule-based fallback.
+
 ## Commands
 
 Check queue:

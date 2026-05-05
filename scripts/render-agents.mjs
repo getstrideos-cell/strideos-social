@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { createQueueItem, queuePath, readQueue, updateQueue } from "./queue-store.mjs";
 import { refreshXAccessToken, XApiError } from "./x-client.mjs";
 import { readXTokenState, writeXTokenState } from "./x-token-store.mjs";
+import { createStructuredJson, hasOpenAI } from "./openai-client.mjs";
 
 const statePath = resolve(process.env.AGENT_STATE_PATH || join(dirname(queuePath), "agent-state.json"));
 const timeZone = process.env.AGENT_TIMEZONE || "America/Sao_Paulo";
@@ -83,7 +84,9 @@ export async function generateDailyGrowthPack({ force = false, reason = "manual"
 
   const board = await ensureFounderBoard(today, now);
   const signals = board?.signals || (await collectTrendSignals());
-  const items = buildGrowthPackItems(today, signals).map((item) =>
+  const rawItems = buildGrowthPackItems(today, signals, board);
+  const enhancedItems = await enhanceGrowthPackWithOpenAI(rawItems, board, signals);
+  const items = enhancedItems.map((item) =>
     createQueueItem({
       ...item,
       status: "draft",
@@ -118,7 +121,7 @@ export async function generateFounderBoard({ force = false, reason = "manual", n
   }
 
   const signals = await collectTrendSignals();
-  const board = buildFounderBoard(today, signals, now, reason);
+  const board = await enhanceFounderBoardWithOpenAI(buildFounderBoard(today, signals, now, reason));
   const latestState = await readAgentState();
   latestState.founderBoard = board;
   await writeAgentState(latestState);
@@ -173,9 +176,15 @@ export async function generateFounderMoment({ force = false, reason = "manual", 
 
 export async function readAgentState() {
   try {
-    return JSON.parse(await readFile(statePath, "utf8"));
+    const content = await readFile(statePath, "utf8");
+    if (!content.trim()) return {};
+    return JSON.parse(content);
   } catch (error) {
     if (error?.code === "ENOENT") return {};
+    if (error instanceof SyntaxError) {
+      console.warn("Agent state file is not valid JSON yet; using empty state for this run.");
+      return {};
+    }
     throw error;
   }
 }
@@ -209,6 +218,7 @@ function buildFounderBoard(today, signals, now, reason) {
     stage: "Landing page live. Core Stride OS product still in development. Social agent and approval workflow are the first working wedge.",
     signals,
     integrations: buildIntegrationStatus(signals),
+    intelligence: hasOpenAI() ? "OpenAI enhanced" : "Rule-based fallback",
     marketRadar: {
       title: "Market Radar",
       summary: "Solo founders are paying attention to AI leverage, distribution, and proof-of-work. The opportunity is to position Stride OS as the operating rhythm that turns real progress into public narrative.",
@@ -274,6 +284,111 @@ function buildFounderBoard(today, signals, now, reason) {
       successMetric: "At least one qualified founder reply, DM, or landing click."
     }
   };
+}
+
+async function enhanceFounderBoardWithOpenAI(board) {
+  if (!hasOpenAI()) return board;
+
+  try {
+    const enhanced = await createStructuredJson({
+      name: "founder_board",
+      schema: founderBoardSchema,
+      maxOutputTokens: 2400,
+      instructions: [
+        "You are the AI Founder Board for Stride OS.",
+        "Act like a pragmatic CMO, CPO, Market Intelligence lead, Chief of Staff, and Growth lead for a solo founder.",
+        "Stride OS today: landing page is live, core product is still in development, social approval workflow exists, Stripe product is not ready.",
+        "Audience: solo founders building early-stage SaaS in public.",
+        "Voice: practical builder with a slight visionary edge. Honest, direct, no generic AI hype.",
+        "Use only the provided signals. Do not invent metrics, customers, revenue, launches, or product features.",
+        "Return concise strategic guidance that can directly feed content, replies, community posts, and product roadmap decisions."
+      ].join("\n"),
+      input: JSON.stringify({
+        stage: board.stage,
+        integrations: board.integrations,
+        signals: board.signals,
+        fallbackBoard: {
+          marketRadar: board.marketRadar,
+          marketingDirector: board.marketingDirector,
+          productDirector: board.productDirector,
+          chiefOfStaff: board.chiefOfStaff,
+          growthExperiment: board.growthExperiment
+        }
+      })
+    });
+
+    return {
+      ...board,
+      intelligence: "OpenAI enhanced",
+      marketRadar: { title: "Market Radar", ...enhanced.marketRadar },
+      marketingDirector: { title: "Marketing Director", ...enhanced.marketingDirector },
+      productDirector: { title: "Product Director", ...enhanced.productDirector },
+      chiefOfStaff: { title: "Chief of Staff", ...enhanced.chiefOfStaff },
+      growthExperiment: { title: "Growth Experiment", ...enhanced.growthExperiment }
+    };
+  } catch (error) {
+    console.warn("OpenAI founder board enhancement failed:", error.message);
+    return {
+      ...board,
+      intelligence: "Rule-based fallback",
+      openAIError: error.message
+    };
+  }
+}
+
+async function enhanceGrowthPackWithOpenAI(items, board, signals) {
+  if (!hasOpenAI()) return items;
+
+  try {
+    const enhanced = await createStructuredJson({
+      name: "growth_pack",
+      schema: growthPackSchema,
+      maxOutputTokens: 2200,
+      instructions: [
+        "You are Stride OS's content strategist.",
+        "Rewrite or improve the provided draft items using the Founder Board context.",
+        "Keep every public text under 280 characters.",
+        "The output must include exactly five items.",
+        "Include at least one community-post item.",
+        "Keep reply items only if they include a real replyToPostId from the input.",
+        "Do not pretend Stride OS is fully launched. It currently has a landing page and project in development.",
+        "No hashtags unless genuinely necessary. No AI-sounding hype. No fake metrics."
+      ].join("\n"),
+      input: JSON.stringify({
+        board: {
+          stage: board?.stage,
+          marketRadar: board?.marketRadar,
+          marketingDirector: board?.marketingDirector,
+          productDirector: board?.productDirector,
+          chiefOfStaff: board?.chiefOfStaff,
+          growthExperiment: board?.growthExperiment
+        },
+        signals,
+        draftItems: items
+      })
+    });
+
+    const byReplyId = new Map(items.filter((item) => item.replyToPostId).map((item) => [item.replyToPostId, item]));
+    return enhanced.items.slice(0, 5).map((item, index) => {
+      const original = item.replyToPostId ? byReplyId.get(item.replyToPostId) || items[index] || {} : items[index] || {};
+      const format = item.format === "community-post" ? "community-post" : original.format;
+      return {
+        ...original,
+        type: item.type === "reply" && item.replyToPostId ? "reply" : "post",
+        format,
+        requiresManualPublish: format === "community-post" || Boolean(original.requiresManualPublish),
+        recommendedSurface: item.recommendedSurface,
+        viralThesis: item.viralThesis,
+        evidence: item.evidence,
+        sourceUrl: item.sourceUrl || original.sourceUrl,
+        trendSignal: item.trendSignal,
+        text: trimPost(item.text)
+      };
+    });
+  } catch (error) {
+    console.warn("OpenAI growth pack enhancement failed:", error.message);
+    return items;
+  }
 }
 
 function buildIntegrationStatus(signals) {
@@ -764,6 +879,130 @@ function dedupeSignals(signals) {
   }
   return unique.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
 }
+
+const stringArraySchema = {
+  type: "array",
+  items: { type: "string" }
+};
+
+const signalSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    label: { type: "string" },
+    source: { type: "string" },
+    url: { type: "string" },
+    evidence: { type: "string" }
+  },
+  required: ["label", "source", "url", "evidence"]
+};
+
+const founderBoardSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    marketRadar: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        summary: { type: "string" },
+        implication: { type: "string" },
+        topSignals: { type: "array", items: signalSchema }
+      },
+      required: ["summary", "implication", "topSignals"]
+    },
+    marketingDirector: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        distributionBet: { type: "string" },
+        reasoning: { type: "string" },
+        recommendedActions: stringArraySchema,
+        experiment: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            name: { type: "string" },
+            hypothesis: { type: "string" },
+            metric: { type: "string" },
+            duration: { type: "string" }
+          },
+          required: ["name", "hypothesis", "metric", "duration"]
+        },
+        risk: { type: "string" }
+      },
+      required: ["distributionBet", "reasoning", "recommendedActions", "experiment", "risk"]
+    },
+    productDirector: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        productBet: { type: "string" },
+        reasoning: { type: "string" },
+        roadmapNow: stringArraySchema,
+        roadmapLater: stringArraySchema,
+        risk: { type: "string" }
+      },
+      required: ["productBet", "reasoning", "roadmapNow", "roadmapLater", "risk"]
+    },
+    chiefOfStaff: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        todayFocus: { type: "string" },
+        decisions: stringArraySchema,
+        nextMove: { type: "string" }
+      },
+      required: ["todayFocus", "decisions", "nextMove"]
+    },
+    growthExperiment: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        name: { type: "string" },
+        channel: { type: "string" },
+        hypothesis: { type: "string" },
+        action: { type: "string" },
+        evidence: { type: "string" },
+        sourceUrl: { type: "string" },
+        successMetric: { type: "string" }
+      },
+      required: ["name", "channel", "hypothesis", "action", "evidence", "sourceUrl", "successMetric"]
+    }
+  },
+  required: ["marketRadar", "marketingDirector", "productDirector", "chiefOfStaff", "growthExperiment"]
+};
+
+const growthPackItemSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    type: { type: "string", enum: ["post", "reply"] },
+    format: { type: "string", enum: ["standard", "community-post"] },
+    replyToPostId: { type: "string" },
+    recommendedSurface: { type: "string" },
+    viralThesis: { type: "string" },
+    evidence: { type: "string" },
+    sourceUrl: { type: "string" },
+    trendSignal: { type: "string" },
+    text: { type: "string" }
+  },
+  required: ["type", "format", "replyToPostId", "recommendedSurface", "viralThesis", "evidence", "sourceUrl", "trendSignal", "text"]
+};
+
+const growthPackSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    items: {
+      type: "array",
+      minItems: 5,
+      maxItems: 5,
+      items: growthPackItemSchema
+    }
+  },
+  required: ["items"]
+};
 
 function replyTextFor(signal) {
   const text = (signal.targetPostText || "").toLowerCase();
