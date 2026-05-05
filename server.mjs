@@ -35,68 +35,41 @@ if (publishIntervalMinutes > 0) {
 
 startRenderAgents();
 
+const ROUTES = {
+  hoje: "/",
+  aprovacao: "/aprovacao",
+  conselho: "/conselho",
+  aprendizados: "/aprendizados",
+  configuracoes: "/configuracoes"
+};
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
 
-    if (url.pathname === "/health") {
-      return sendText(res, 200, "ok");
-    }
+    if (url.pathname === "/health") return sendText(res, 200, "ok");
+    if (url.pathname === "/api/items" && req.method === "POST") return handleApiCreateItem(req, res);
+    if (url.pathname === "/login" && req.method === "GET") return sendHtml(res, renderLogin());
+    if (url.pathname === "/login" && req.method === "POST") return handleLogin(req, res);
 
-    if (url.pathname === "/api/items" && req.method === "POST") {
-      return handleApiCreateItem(req, res);
-    }
+    if (!isAuthenticated(req)) return redirect(res, "/login");
 
-    if (url.pathname === "/login" && req.method === "GET") {
-      return sendHtml(res, renderLogin());
-    }
+    if (url.pathname === "/logout" && req.method === "POST") return handleLogout(res);
 
-    if (url.pathname === "/login" && req.method === "POST") {
-      return handleLogin(req, res);
-    }
+    if (url.pathname === "/" && req.method === "GET") return handleHomePage(req, res);
+    if (url.pathname === "/aprovacao" && req.method === "GET") return handleApprovalPage(req, res, url);
+    if (url.pathname === "/conselho" && req.method === "GET") return handleCouncilPage(req, res);
+    if (url.pathname === "/aprendizados" && req.method === "GET") return handleLearningsPage(req, res);
+    if (url.pathname === "/configuracoes" && req.method === "GET") return handleSettingsPage(req, res);
 
-    if (!isAuthenticated(req)) {
-      return redirect(res, "/login");
-    }
+    if (url.pathname === "/auth/google" && req.method === "POST") return handleGoogleAuth(req, res);
+    if (url.pathname === "/auth/google/callback" && req.method === "GET") return handleGoogleCallback(req, res, url);
 
-    if (url.pathname === "/logout" && req.method === "POST") {
-      return handleLogout(res);
-    }
-
-    if (url.pathname === "/" && req.method === "GET") {
-      const queue = await readQueue();
-      const agentState = await readAgentState();
-      const googleAnalytics = await getGoogleAnalyticsStatus();
-      return sendHtml(res, renderDashboard(queue, { dryRun, publishIntervalMinutes, agentState, googleAnalytics }));
-    }
-
-    if (url.pathname === "/auth/google" && req.method === "POST") {
-      return handleGoogleAuth(req, res);
-    }
-
-    if (url.pathname === "/auth/google/callback" && req.method === "GET") {
-      return handleGoogleCallback(req, res, url);
-    }
-
-    if (url.pathname === "/items" && req.method === "POST") {
-      return handleCreateItem(req, res);
-    }
-
-    if (url.pathname === "/agents/run/growth" && req.method === "POST") {
-      return handleRunGrowthAgent(res);
-    }
-
-    if (url.pathname === "/agents/run/board" && req.method === "POST") {
-      return handleRunFounderBoardAgent(res);
-    }
-
-    if (url.pathname === "/agents/run/founder-moment" && req.method === "POST") {
-      return handleRunFounderMomentAgent(res);
-    }
-
-    if (url.pathname === "/archive/delete-rejected" && req.method === "POST") {
-      return handleDeleteRejected(res);
-    }
+    if (url.pathname === "/items" && req.method === "POST") return handleCreateItem(req, res);
+    if (url.pathname === "/agents/run/growth" && req.method === "POST") return handleRunGrowthAgent(res);
+    if (url.pathname === "/agents/run/board" && req.method === "POST") return handleRunFounderBoardAgent(res);
+    if (url.pathname === "/agents/run/founder-moment" && req.method === "POST") return handleRunFounderMomentAgent(res);
+    if (url.pathname === "/archive/delete-rejected" && req.method === "POST") return handleDeleteRejected(req, res);
 
     const itemAction = url.pathname.match(/^\/items\/([^/]+)\/(approve|reject|draft|update|publish|delete|convert-to-post|manual-posted)$/);
     if (itemAction && req.method === "POST") {
@@ -104,9 +77,7 @@ const server = createServer(async (req, res) => {
       return handleItemAction(req, res, id, action);
     }
 
-    if (url.pathname === "/publish" && req.method === "POST") {
-      return handlePublishNow(res);
-    }
+    if (url.pathname === "/publish" && req.method === "POST") return handlePublishNow(req, res);
 
     return sendText(res, 404, "Not found");
   } catch (error) {
@@ -118,6 +89,49 @@ const server = createServer(async (req, res) => {
 server.listen(port, () => {
   console.log(`Stride OS publisher running on http://localhost:${port}`);
 });
+
+// ============================================================================
+// PAGE HANDLERS
+// ============================================================================
+
+async function handleHomePage(_req, res) {
+  const queue = await readQueue();
+  const agentState = await readAgentState();
+  const googleAnalytics = await getGoogleAnalyticsStatus();
+  return sendHtml(res, renderHomePage(queue, { dryRun, agentState, googleAnalytics, publishIntervalMinutes }));
+}
+
+async function handleApprovalPage(_req, res, url) {
+  const queue = await readQueue();
+  const agentState = await readAgentState();
+  const googleAnalytics = await getGoogleAnalyticsStatus();
+  const tab = url.searchParams.get("aba") || "posts";
+  return sendHtml(res, renderApprovalPage(queue, { dryRun, agentState, googleAnalytics }, tab));
+}
+
+async function handleCouncilPage(_req, res) {
+  const agentState = await readAgentState();
+  const googleAnalytics = await getGoogleAnalyticsStatus();
+  return sendHtml(res, renderCouncilPage({ dryRun, agentState, googleAnalytics }));
+}
+
+async function handleLearningsPage(_req, res) {
+  const queue = await readQueue();
+  const agentState = await readAgentState();
+  const googleAnalytics = await getGoogleAnalyticsStatus();
+  return sendHtml(res, renderLearningsPage(queue, { dryRun, agentState, googleAnalytics }));
+}
+
+async function handleSettingsPage(_req, res) {
+  const queue = await readQueue();
+  const agentState = await readAgentState();
+  const googleAnalytics = await getGoogleAnalyticsStatus();
+  return sendHtml(res, renderSettingsPage(queue, { dryRun, agentState, googleAnalytics, publishIntervalMinutes }));
+}
+
+// ============================================================================
+// QUEUE / ITEM HANDLERS
+// ============================================================================
 
 async function handleApiCreateItem(req, res) {
   if (!apiToken || req.headers.authorization !== `Bearer ${apiToken}`) {
@@ -224,14 +238,15 @@ async function handleCreateItem(req, res) {
       })
     );
   });
-  return redirect(res, "/");
+  return redirect(res, body._redirect || "/aprovacao");
 }
 
-async function handleDeleteRejected(res) {
+async function handleDeleteRejected(req, res) {
+  const body = await parseBody(req);
   await updateQueue((queue) => {
     queue.items = queue.items.filter((item) => item.status !== "rejected");
   });
-  return redirect(res, "/");
+  return redirect(res, body._redirect || "/aprovacao?aba=arquivo");
 }
 
 async function handleRunGrowthAgent(res) {
@@ -241,12 +256,12 @@ async function handleRunGrowthAgent(res) {
 
 async function handleRunFounderBoardAgent(res) {
   await generateFounderBoard({ force: true, reason: "dashboard" });
-  return redirect(res, "/");
+  return redirect(res, "/conselho");
 }
 
 async function handleRunFounderMomentAgent(res) {
   await generateFounderMoment({ force: true, reason: "dashboard" });
-  return redirect(res, "/");
+  return redirect(res, "/aprovacao?aba=moments");
 }
 
 function handleGoogleAuth(req, res) {
@@ -273,17 +288,20 @@ async function handleGoogleCallback(req, res, url) {
   if (!code) return sendText(res, 400, "Missing Google OAuth code.");
 
   await exchangeGoogleCode({ code, redirectUri: getGoogleRedirectUri(req) });
-  return redirect(res, "/");
+  return redirect(res, "/configuracoes");
 }
 
 async function handleItemAction(req, res, id, action) {
+  const body = ["update", "reject", "approve"].includes(action) ? await parseBody(req) : {};
+  const fallback = body._redirect || "/aprovacao";
+
   if (action === "delete") {
     await updateQueue((queue) => {
       const index = queue.items.findIndex((candidate) => candidate.id === id);
       if (index === -1) throw new Error(`No item found with id: ${id}`);
       queue.items.splice(index, 1);
     });
-    return redirect(res, "/");
+    return redirect(res, fallback);
   }
 
   if (action === "publish") {
@@ -295,7 +313,7 @@ async function handleItemAction(req, res, id, action) {
       }
     });
     await publishApproved({ accessToken, dryRun, onlyId: id });
-    return redirect(res, "/");
+    return redirect(res, fallback);
   }
 
   if (action === "convert-to-post") {
@@ -314,7 +332,7 @@ async function handleItemAction(req, res, id, action) {
       item.failedAt = undefined;
       item.updatedAt = new Date().toISOString();
     });
-    return redirect(res, "/");
+    return redirect(res, fallback);
   }
 
   if (action === "manual-posted") {
@@ -326,10 +344,9 @@ async function handleItemAction(req, res, id, action) {
       delete item.error;
       delete item.failedAt;
     });
-    return redirect(res, "/");
+    return redirect(res, fallback);
   }
 
-  const body = action === "update" ? await parseBody(req) : {};
   await updateQueue((queue) => {
     const item = findItem(queue, id);
 
@@ -357,19 +374,24 @@ async function handleItemAction(req, res, id, action) {
       item.requiresManualAsset = body.requiresManualAsset === "on" || item.format === "founder-moment";
       item.requiresManualPublish = body.requiresManualPublish === "on" || item.format === "community-post";
       item.text = body.text || "";
+    } else if (action === "reject") {
+      item.status = "rejected";
+      item.rejectionReason = (body.rejectionReason || "").trim() || undefined;
+      item.rejectedAt = new Date().toISOString();
     } else {
-      item.status = action === "approve" ? "approved" : action === "reject" ? "rejected" : action;
+      item.status = action === "approve" ? "approved" : action;
     }
 
     item.updatedAt = new Date().toISOString();
   });
 
-  return redirect(res, "/");
+  return redirect(res, fallback);
 }
 
-async function handlePublishNow(res) {
+async function handlePublishNow(req, res) {
+  const body = await parseBody(req);
   await publishApproved({ accessToken, dryRun });
-  return redirect(res, "/");
+  return redirect(res, body._redirect || "/aprovacao?aba=aprovados");
 }
 
 function findItem(queue, id) {
@@ -377,6 +399,10 @@ function findItem(queue, id) {
   if (!item) throw new Error(`No item found with id: ${id}`);
   return item;
 }
+
+// ============================================================================
+// HTTP HELPERS
+// ============================================================================
 
 async function parseBody(req) {
   const chunks = [];
@@ -451,503 +477,1013 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload, null, 2));
 }
 
+// ============================================================================
+// QUEUE FILTERS / CLASSIFICATION
+// ============================================================================
+
+function classifyItem(item) {
+  if (item.format === "founder-moment" || item.requiresManualAsset) return "moments";
+  if (item.format === "community-post" || item.requiresManualPublish) return "comunidade";
+  if (item.type === "reply") return "replies";
+  return "posts";
+}
+
+function partitionQueue(queue) {
+  const drafts = queue.items.filter((item) => ["draft", "failed"].includes(item.status));
+  const approved = queue.items.filter((item) => item.status === "approved");
+  const archive = queue.items.filter((item) => ["published", "rejected"].includes(item.status));
+
+  return {
+    posts: drafts.filter((item) => classifyItem(item) === "posts"),
+    replies: drafts.filter((item) => classifyItem(item) === "replies"),
+    comunidade: drafts.filter((item) => classifyItem(item) === "comunidade"),
+    moments: drafts.filter((item) => classifyItem(item) === "moments"),
+    aprovados: approved,
+    arquivo: archive,
+    counts: queue.items.reduce((acc, item) => {
+      acc[item.status] = (acc[item.status] || 0) + 1;
+      return acc;
+    }, {})
+  };
+}
+
+// ============================================================================
+// SHELL — common HTML wrapper
+// ============================================================================
+
+function renderShell(activeRoute, options, content) {
+  const queueHint = options.queueHint || {};
+  return `<!doctype html>
+<html lang="pt-BR">
+${renderHead(options.title || "Stride OS")}
+<body>
+  <div class="shell">
+    ${renderSidebar(activeRoute, options, queueHint)}
+    <div class="main">
+      ${renderTopbar(options)}
+      <div class="page">
+        ${content}
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function renderSidebar(activeRoute, options, queueHint) {
+  const items = [
+    { id: "hoje", href: ROUTES.hoje, label: "Hoje", icon: iconHome() },
+    { id: "aprovacao", href: ROUTES.aprovacao, label: "Aprovação", icon: iconCheck(), badge: queueHint.pending },
+    { id: "conselho", href: ROUTES.conselho, label: "Conselho", icon: iconUsers() },
+    { id: "aprendizados", href: ROUTES.aprendizados, label: "Aprendizados", icon: iconChart() },
+    { id: "configuracoes", href: ROUTES.configuracoes, label: "Configurações", icon: iconCog() }
+  ];
+
+  const navHtml = items
+    .map(
+      (item) => `<a href="${escapeHtml(item.href)}" class="${activeRoute === item.id ? "active" : ""}">
+        <span class="nav-icon">${item.icon}</span>
+        <span class="nav-label">${escapeHtml(item.label)}</span>
+        ${item.badge ? `<span class="nav-badge">${escapeHtml(String(item.badge))}</span>` : ""}
+      </a>`
+    )
+    .join("");
+
+  return `<aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">SO</div>
+      <div class="brand-name">Stride OS<small>Central de comando</small></div>
+    </div>
+    <nav class="nav">${navHtml}</nav>
+    <div class="sidebar-footer">
+      <span class="mode-chip ${options.dryRun ? "dry" : "live"}">${options.dryRun ? "Modo dry run" : "Modo live"}</span>
+      <form method="post" action="/logout"><button class="ghost compact" type="submit">Sair</button></form>
+    </div>
+  </aside>`;
+}
+
+function renderTopbar(options) {
+  return `<header class="topbar">
+    <div class="breadcrumb">
+      <h1>${escapeHtml(options.pageTitle || "")}</h1>
+      ${options.pageHint ? `<span class="crumb-sub">· ${escapeHtml(options.pageHint)}</span>` : ""}
+    </div>
+    <div class="topbar-actions">
+      ${options.topbarActions || ""}
+    </div>
+  </header>`;
+}
+
+// ============================================================================
+// LOGIN
+// ============================================================================
+
 function renderLogin(error) {
   return `<!doctype html>
-<html lang="en">
-${renderHead("Login")}
+<html lang="pt-BR">
+${renderHead("Entrar")}
 <body class="login">
   <main class="login-panel">
-    <p class="eyebrow">Stride OS</p>
-    <h1>Approval Queue</h1>
+    <div class="brand">
+      <div class="brand-mark">SO</div>
+      <div class="brand-name">Stride OS<small>Central de comando</small></div>
+    </div>
+    <h2 style="margin-top: 16px; font-size: 18px; font-weight: 600;">Entrar</h2>
     <form method="post" action="/login">
-      <label>Password</label>
+      <label class="field-label">Senha</label>
       <input name="password" type="password" autocomplete="current-password" required autofocus>
-      ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
-      <button type="submit">Enter</button>
+      ${error ? `<p class="alert error">${escapeHtml(error)}</p>` : ""}
+      <button type="submit">Entrar</button>
     </form>
   </main>
 </body>
 </html>`;
 }
 
-function renderDashboard(queue, options) {
-  const counts = queue.items.reduce((acc, item) => {
-    acc[item.status] = (acc[item.status] || 0) + 1;
-    return acc;
-  }, {});
+// ============================================================================
+// PAGE: HOJE
+// ============================================================================
 
-  const isManualItem = (item) => ["founder-moment", "community-post"].includes(item.format) || item.requiresManualAsset || item.requiresManualPublish;
-  const isFounderMoment = (item) => item.format === "founder-moment" || item.requiresManualAsset;
-  const isCommunityPost = (item) => item.format === "community-post" || item.requiresManualPublish;
-  const founderMoments = queue.items.filter((item) => ["draft", "failed"].includes(item.status) && isFounderMoment(item));
-  const communityPosts = queue.items.filter((item) => ["draft", "failed"].includes(item.status) && isCommunityPost(item) && !isFounderMoment(item));
-  const needsReview = queue.items.filter((item) => ["draft", "failed"].includes(item.status) && !isManualItem(item));
-  const approved = queue.items.filter((item) => item.status === "approved");
-  const archive = queue.items.filter((item) => ["published", "rejected"].includes(item.status));
-  const rejectedCount = queue.items.filter((item) => item.status === "rejected").length;
-  const archiveActions =
-    rejectedCount > 0
-      ? `<form method="post" action="/archive/delete-rejected" onsubmit="return confirm('Delete all rejected drafts? Published items will stay in the archive.');">
-          <button class="delete compact" type="submit">Delete rejected</button>
-        </form>`
-      : "";
+function renderHomePage(queue, options) {
+  const partition = partitionQueue(queue);
+  const board = options.agentState?.founderBoard;
+  const pendingTotal = partition.posts.length + partition.replies.length + partition.comunidade.length + partition.moments.length;
 
-  return `<!doctype html>
-<html lang="en">
-${renderHead("Stride OS Publisher")}
-<body>
-  <header class="topbar">
-    <div class="brand-row">
-      <div class="brand-mark">SO</div>
-      <div>
-        <p class="eyebrow">Stride OS Social</p>
-        <h1>Review Queue</h1>
-        <p class="subtitle">Approve posts and contextual replies before they reach X.</p>
-      </div>
-    </div>
-    <div class="top-actions">
-      <span class="mode-chip ${options.dryRun ? "dry" : "live"}">${options.dryRun ? "Dry run" : "Live"}</span>
-      <form method="post" action="/logout">
-        <button class="secondary compact" type="submit">Logout</button>
-      </form>
-    </div>
-  </header>
+  const opportunity = board?.marketRadar?.topSignals?.[0];
+  const priority = board?.chiefOfStaff?.todayFocus || board?.marketingDirector?.distributionBet;
+  const founderMomentSuggestion = partition.moments[0];
 
-  <main>
-    <section class="status-strip">
-      ${renderMetric("Draft", counts.draft || 0)}
-      ${renderMetric("Approved", counts.approved || 0)}
-      ${renderMetric("Published", counts.published || 0)}
-      ${renderMetric("Failed", counts.failed || 0)}
-      ${renderMetric("Mode", options.dryRun ? "Dry run" : "Live")}
-    </section>
-
-    <section class="mode-banner ${options.dryRun ? "dry" : "live"}">
-      <div>
-        <strong>${options.dryRun ? "Dry run mode" : "Live publishing is on"}</strong>
-        <p>${options.dryRun ? "You can test approvals and publish buttons safely. Nothing will post to X." : "Approved items can publish to X. Review the text and target before you publish."}</p>
-      </div>
-      <form method="post" action="/publish">
-        <button type="submit">${options.dryRun ? "Test approved items" : "Publish approved now"}</button>
-      </form>
-    </section>
-
-    ${renderAgentPanel(options.agentState)}
-    ${renderIntegrationPanel(options)}
-    ${renderFounderBoard(options.agentState?.founderBoard)}
-
-    <details class="composer">
-      <summary>Add a draft manually</summary>
-      <div class="composer-body">
-        <form method="post" action="/items">
-          <div class="row">
-            <select name="type">
-              <option value="post">Post</option>
-              <option value="reply">Reply</option>
-            </select>
-            <input type="hidden" name="format" value="standard">
-            <input name="replyToPostId" placeholder="Reply post ID, only for replies">
-          </div>
-          <textarea name="text" maxlength="280" placeholder="Write or paste an English X post/reply..." required></textarea>
-          <details class="advanced">
-            <summary>Reply context</summary>
-            <div class="advanced-body">
-              <div class="row">
-                <input name="targetAuthor" placeholder="Target author">
-                <input name="targetHandle" placeholder="@handle">
-              </div>
-              <input name="targetPostUrl" placeholder="Target post URL">
-              <textarea name="targetPostSummary" placeholder="Short summary of the post being replied to"></textarea>
-              <textarea name="targetPostText" placeholder="Original post text/context"></textarea>
-              <textarea name="replyRationale" placeholder="Why this reply is worth posting"></textarea>
-            </div>
-          </details>
-          <button type="submit">Add draft</button>
+  const opportunityCard = opportunity
+    ? `<div class="hoje-priority">
+        <span class="label">Melhor oportunidade do dia</span>
+        <h2>${escapeHtml(opportunity.label || "Sinal sem título")}</h2>
+        ${opportunity.evidence ? `<p>${escapeHtml(opportunity.evidence)}</p>` : ""}
+        ${opportunity.url ? `<p style="margin-top: 12px;"><a href="${escapeHtml(opportunity.url)}" target="_blank" rel="noreferrer" style="color: var(--info); font-weight: 500;">Abrir fonte →</a></p>` : ""}
+      </div>`
+    : `<div class="hoje-priority">
+        <span class="label">Melhor oportunidade do dia</span>
+        <h2 style="color: var(--muted);">Sem sinal capturado ainda</h2>
+        <p>Rode o Conselho do Founder para que o Radar de Mercado traga a melhor oportunidade do dia.</p>
+        <form method="post" action="/agents/run/board" style="margin-top: 16px;">
+          <button type="submit">Gerar conselho agora</button>
         </form>
-      </div>
-    </details>
+      </div>`;
 
-    ${renderItemSection("Founder Moments", "Manual image ideas only you can create: photo brief, context, and caption.", founderMoments, "moments")}
-    ${renderItemSection("Community Posts", "Manual posts designed for the build-in-public community.", communityPosts, "community")}
-    ${renderItemSection("Needs Review", "Edit, approve, or reject these before anything can publish.", needsReview, "review")}
-    ${renderItemSection("Approved", "Ready to publish. In live mode, the publish button posts to X.", approved, "approved")}
-    ${renderItemSection("Archive", "Published and rejected items stay out of the review flow.", archive, "archive", true, archiveActions)}
-  </main>
-</body>
-</html>`;
-}
-
-function renderMetric(label, value) {
-  const key = label.toLowerCase().replaceAll(" ", "-");
-  return `<div class="metric ${escapeHtml(key)}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`;
-}
-
-function renderAgentPanel(agentState = {}) {
-  const board = agentState.founderBoard;
-  const growth = agentState.growthPack;
-  const moment = agentState.founderMoment;
-
-  return `<section class="agent-panel">
-    <div>
-      <p class="eyebrow">Render agents</p>
-      <h2>Daily generators</h2>
-      <p>Runs inside Render at 08:30, 09:00, and 10:30 America/Sao_Paulo. No notebook required.</p>
+  const priorityCard = `<section class="card">
+    <div class="card-head">
+      <p class="eyebrow">Ação prioritária</p>
+      <h3>${escapeHtml(priority || "O Chief of Staff ainda não definiu o foco do dia.")}</h3>
     </div>
-    <div class="agent-status">
-      ${renderAgentStatus("Founder board", board, "08:30")}
-      ${renderAgentStatus("Growth pack", growth, "09:00")}
-      ${renderAgentStatus("Founder moment", moment, "10:30")}
-    </div>
-    <div class="actions">
-      <form method="post" action="/agents/run/board">
-        <button class="secondary" type="submit">Run founder board now</button>
-      </form>
-      <form method="post" action="/agents/run/growth">
-        <button class="secondary" type="submit">Run growth pack now</button>
-      </form>
-      <form method="post" action="/agents/run/founder-moment">
-        <button class="secondary" type="submit">Run founder moment now</button>
-      </form>
+    ${board?.chiefOfStaff?.nextMove ? `<p class="subtle">Próximo movimento: ${escapeHtml(board.chiefOfStaff.nextMove)}</p>` : ""}
+    <div style="margin-top: 16px;">
+      <a href="/conselho" class="btn secondary compact">Ver conselho completo</a>
     </div>
   </section>`;
-}
 
-function renderIntegrationPanel(options = {}) {
-  const google = options.googleAnalytics || {};
-  const status = google.connected ? "Conectado" : google.configured ? "Pronto para conectar" : "Configurar no Render";
-  const detail = google.connected
-    ? `GA4 ${google.propertyId} conectado${google.connectedAt ? ` em ${formatTime(google.connectedAt)}` : ""}.`
-    : google.configured
-      ? "Clique para autorizar a leitura do Google Analytics com sua conta Google."
-      : "Adicione GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET e GOOGLE_ANALYTICS_PROPERTY_ID no Render.";
-
-  return `<section class="integration-panel">
-    <div>
-      <p class="eyebrow">Integrações</p>
-      <h2>Fontes de dados</h2>
-      <p>Conecte analytics e canais para alimentar os diretores e os drafts com sinais reais.</p>
-    </div>
-    <div class="integration-status-card">
-      <span>Google Analytics</span>
-      <strong>${escapeHtml(status)}</strong>
-      <small>${escapeHtml(detail)}</small>
-    </div>
-    <div class="actions">
-      <form method="post" action="/auth/google">
-        <button class="secondary" type="submit" ${google.configured ? "" : "disabled"}>${google.connected ? "Reconectar Google Analytics" : "Conectar Google Analytics"}</button>
-      </form>
+  const queueRows = `<section class="card">
+    <div class="card-head"><h3>Aguardando aprovação</h3></div>
+    <div class="queue-summary">
+      <a href="/aprovacao?aba=posts"><span>Posts no perfil</span><span class="count">${partition.posts.length}</span></a>
+      <a href="/aprovacao?aba=replies"><span>Replies sugeridos</span><span class="count">${partition.replies.length}</span></a>
+      <a href="/aprovacao?aba=comunidade"><span>Posts de comunidade</span><span class="count">${partition.comunidade.length}</span></a>
+      <a href="/aprovacao?aba=moments"><span>Founder Moments</span><span class="count">${partition.moments.length}</span></a>
+      <a href="/aprovacao?aba=aprovados"><span>Aprovados, prontos para publicar</span><span class="count">${partition.aprovados.length}</span></a>
     </div>
   </section>`;
-}
 
-function renderFounderBoard(board) {
-  if (!board) {
-    return `<section class="boardroom empty-board">
-      <div class="board-head">
-        <div>
-          <p class="eyebrow">Founder Board</p>
-          <h2>AI directors</h2>
-          <p>No board memo yet. Run the founder board to create marketing, product, market, and execution guidance.</p>
+  const founderMomentCard = founderMomentSuggestion
+    ? `<section class="card">
+        <div class="card-head"><p class="eyebrow">Founder moment sugerido</p><h3>${escapeHtml(founderMomentSuggestion.title || "Foto manual")}</h3></div>
+        ${founderMomentSuggestion.visualBrief ? `<p class="subtle" style="margin-bottom: 8px;"><strong style="color: var(--ink);">Foto:</strong> ${escapeHtml(founderMomentSuggestion.visualBrief)}</p>` : ""}
+        ${founderMomentSuggestion.whyNow ? `<p class="subtle">${escapeHtml(founderMomentSuggestion.whyNow)}</p>` : ""}
+        <div style="margin-top: 12px;">
+          <a href="/aprovacao?aba=moments" class="btn secondary compact">Abrir Founder Moments</a>
         </div>
-        <form method="post" action="/agents/run/board">
-          <button class="secondary" type="submit">Run founder board now</button>
-        </form>
+      </section>`
+    : "";
+
+  const agentStatus = renderAgentStatusCompact(options.agentState);
+
+  const content = `
+    <div class="page-head">
+      <p class="eyebrow">${formatToday()}</p>
+      <h1>Bom dia, founder.</h1>
+      <p>Resumo operacional do dia: o que seus agentes encontraram, o que o conselho recomenda e o que precisa da sua atenção.</p>
+    </div>
+
+    <div class="hoje-grid">
+      <div class="hoje-main">
+        ${opportunityCard}
+        <div style="margin-top: 16px;">
+          ${priorityCard}
+        </div>
       </div>
-    </section>`;
+      <div class="hoje-side">
+        ${queueRows}
+        ${founderMomentCard}
+        ${agentStatus}
+      </div>
+    </div>
+  `;
+
+  return renderShell("hoje", {
+    ...options,
+    title: "Hoje · Stride OS",
+    pageTitle: "Hoje",
+    pageHint: pendingTotal > 0 ? `${pendingTotal} item${pendingTotal === 1 ? "" : "s"} aguardando aprovação` : "Fila zerada",
+    queueHint: { pending: pendingTotal || undefined },
+    topbarActions: pendingTotal > 0 ? `<a href="/aprovacao" class="btn compact">Ir para aprovação</a>` : ""
+  }, content);
+}
+
+function renderAgentStatusCompact(agentState = {}) {
+  const items = [
+    { label: "Conselho do Founder", state: agentState.founderBoard, schedule: "08:30" },
+    { label: "Pacote de crescimento", state: agentState.growthPack, schedule: "09:00" },
+    { label: "Founder moment", state: agentState.founderMoment, schedule: "10:30" }
+  ];
+
+  const rows = items
+    .map(
+      (item) => `<p style="display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px;">
+        <span>${escapeHtml(item.label)}</span>
+        <span style="color: var(--muted);">${item.state?.createdAt ? formatTime(item.state.createdAt) : `agendado ${escapeHtml(item.schedule)}`}</span>
+      </p>`
+    )
+    .join("");
+
+  return `<section class="card">
+    <div class="card-head"><h3>Agentes</h3></div>
+    ${rows}
+  </section>`;
+}
+
+// ============================================================================
+// PAGE: APROVAÇÃO
+// ============================================================================
+
+function renderApprovalPage(queue, options, activeTab) {
+  const partition = partitionQueue(queue);
+  const validTabs = ["posts", "replies", "comunidade", "moments", "aprovados", "arquivo"];
+  const tab = validTabs.includes(activeTab) ? activeTab : "posts";
+
+  const tabLabels = {
+    posts: "Posts no perfil",
+    replies: "Replies",
+    comunidade: "Comunidade",
+    moments: "Founder Moments",
+    aprovados: "Aprovados",
+    arquivo: "Arquivo"
+  };
+
+  const tabsHtml = validTabs
+    .map((id) => {
+      const items = partition[id] || [];
+      const isActive = id === tab;
+      return `<a href="/aprovacao?aba=${id}" class="${isActive ? "active" : ""}">
+        ${escapeHtml(tabLabels[id])}
+        <span class="count">${items.length}</span>
+      </a>`;
+    })
+    .join("");
+
+  const items = partition[tab] || [];
+  const tabIntros = {
+    posts: "Posts originais para o seu perfil. Aprove ou rejeite antes de publicar.",
+    replies: "Replies contextuais com contexto do post-alvo. Texto público em inglês.",
+    comunidade: "Posts manuais para a comunidade build-in-public. Você publica fora do dashboard e marca como postado.",
+    moments: "Ideias de fotos manuais com brief visual e instrução de captura. Você tira a foto, edita a legenda e publica manualmente no X.",
+    aprovados: "Itens prontos para publicar. Em modo live, o botão Publicar dispara o post no X.",
+    arquivo: "Itens já publicados ou rejeitados. Não interferem mais no fluxo."
+  };
+
+  const showComposer = ["posts", "replies"].includes(tab);
+  const showDeleteRejected = tab === "arquivo" && partition.arquivo.some((item) => item.status === "rejected");
+
+  const content = `
+    <div class="page-head">
+      <p class="eyebrow">Aprovação</p>
+      <h1>${escapeHtml(tabLabels[tab])}</h1>
+      <p>${escapeHtml(tabIntros[tab])}</p>
+    </div>
+
+    <div class="tabs">${tabsHtml}</div>
+
+    ${showComposer ? renderComposer() : ""}
+
+    ${
+      items.length === 0
+        ? `<div class="empty">Nada por aqui ainda.</div>`
+        : items.map((item) => renderItem(item, `/aprovacao?aba=${tab}`)).join("")
+    }
+
+    ${
+      showDeleteRejected
+        ? `<form method="post" action="/archive/delete-rejected" onsubmit="return confirm('Excluir todos os rejeitados? Os publicados continuam no arquivo.');" style="margin-top: 16px;">
+            <input type="hidden" name="_redirect" value="/aprovacao?aba=arquivo">
+            <button class="reject compact" type="submit">Excluir rejeitados</button>
+          </form>`
+        : ""
+    }
+  `;
+
+  const pendingTotal = partition.posts.length + partition.replies.length + partition.comunidade.length + partition.moments.length;
+  const approvedTotal = partition.aprovados.length;
+
+  return renderShell("aprovacao", {
+    ...options,
+    title: `${tabLabels[tab]} · Aprovação · Stride OS`,
+    pageTitle: "Aprovação",
+    pageHint: tab === "aprovados" && approvedTotal > 0 ? `${approvedTotal} pronto${approvedTotal === 1 ? "" : "s"} para publicar` : undefined,
+    queueHint: { pending: pendingTotal || undefined },
+    topbarActions: tab === "aprovados" && approvedTotal > 0 ? renderPublishAllForm(options.dryRun, "/aprovacao?aba=aprovados") : ""
+  }, content);
+}
+
+function renderPublishAllForm(dry, redirect) {
+  return `<form method="post" action="/publish">
+    <input type="hidden" name="_redirect" value="${escapeHtml(redirect)}">
+    <button type="submit" class="publish">${dry ? "Testar publicação" : "Publicar todos os aprovados"}</button>
+  </form>`;
+}
+
+function renderComposer() {
+  return `<details class="composer" style="margin-bottom: 20px;">
+    <summary>+ Adicionar rascunho manualmente</summary>
+    <div class="composer-body">
+      <form method="post" action="/items">
+        <input type="hidden" name="_redirect" value="/aprovacao">
+        <div class="row cols-2">
+          <div>
+            <label class="field-label">Tipo</label>
+            <select name="type"><option value="post">Post</option><option value="reply">Reply</option></select>
+          </div>
+          <div>
+            <label class="field-label">Reply ID (somente reply)</label>
+            <input name="replyToPostId" placeholder="ex: 1234567890123456789">
+          </div>
+        </div>
+        <input type="hidden" name="format" value="standard">
+        <div>
+          <label class="field-label">Texto público (em inglês)</label>
+          <textarea name="text" maxlength="280" placeholder="Texto que vai para o X..." required></textarea>
+        </div>
+        <details class="advanced">
+          <summary>Contexto do reply (opcional)</summary>
+          <div class="advanced-body">
+            <div class="row cols-2">
+              <input name="targetAuthor" placeholder="Autor-alvo">
+              <input name="targetHandle" placeholder="@handle">
+            </div>
+            <input name="targetPostUrl" placeholder="URL do post-alvo">
+            <textarea name="targetPostSummary" placeholder="Resumo curto do post sendo respondido"></textarea>
+            <textarea name="replyRationale" placeholder="Por que vale responder"></textarea>
+          </div>
+        </details>
+        <div><button type="submit">Adicionar rascunho</button></div>
+      </form>
+    </div>
+  </details>`;
+}
+
+// ============================================================================
+// PAGE: CONSELHO DO FOUNDER
+// ============================================================================
+
+function renderCouncilPage(options) {
+  const board = options.agentState?.founderBoard;
+
+  if (!board) {
+    const content = `
+      <div class="page-head">
+        <p class="eyebrow">Conselho do Founder</p>
+        <h1>Sem memorando ainda</h1>
+        <p>O Conselho ainda não foi gerado hoje. Rode-o para que os diretores tragam Radar de Mercado, Marketing, Produto, Chief of Staff e o Experimento de Crescimento.</p>
+      </div>
+      <form method="post" action="/agents/run/board"><button type="submit">Gerar conselho agora</button></form>
+    `;
+    return renderShell("conselho", {
+      ...options,
+      title: "Conselho · Stride OS",
+      pageTitle: "Conselho do Founder"
+    }, content);
   }
 
-  return `<section class="boardroom">
-    <div class="board-head">
-      <div>
-        <p class="eyebrow">Founder Board</p>
-        <h2>Today's operating memo</h2>
-        <p>${escapeHtml(board.stage || "")}${board.intelligence ? ` Intelligence: ${escapeHtml(board.intelligence)}.` : ""}</p>
-        ${board.openAIError ? `<p class="alert error">OpenAI enhancement failed: ${escapeHtml(board.openAIError)}</p>` : ""}
-      </div>
-      <div class="board-meta">
-        <span>${escapeHtml(board.date || "")}</span>
-        <small>${escapeHtml(formatTime(board.createdAt))}</small>
-      </div>
+  const personas = [
+    { card: board.marketRadar, kind: "radar" },
+    { card: board.marketingDirector, kind: "marketing" },
+    { card: board.productDirector, kind: "produto" },
+    { card: board.chiefOfStaff, kind: "chief" }
+  ];
+
+  const personaTitlesPt = {
+    radar: "Radar de Mercado",
+    marketing: "Diretor de Marketing",
+    produto: "Diretor de Produto",
+    chief: "Chief of Staff"
+  };
+
+  const cardsHtml = personas
+    .map((p) => renderCouncilCard(p.card, personaTitlesPt[p.kind]))
+    .join("") + renderGrowthExperimentCard(board.growthExperiment);
+
+  const content = `
+    <div class="page-head">
+      <p class="eyebrow">${escapeHtml(board.date || formatToday())} · gerado ${escapeHtml(formatTime(board.createdAt))}</p>
+      <h1>Conselho do Founder</h1>
+      <p>${escapeHtml(board.stage || "Memorando operativo do dia.")}${board.intelligence ? ` · Inteligência: ${escapeHtml(board.intelligence)}` : ""}</p>
+      ${board.openAIError ? `<p class="alert error" style="margin-top: 12px;">Falha na otimização OpenAI: ${escapeHtml(board.openAIError)}</p>` : ""}
     </div>
-    <div class="board-grid">
-      ${renderIntegrations(board.integrations)}
-      ${renderBoardCard(board.marketRadar)}
-      ${renderBoardCard(board.marketingDirector)}
-      ${renderBoardCard(board.productDirector)}
-      ${renderBoardCard(board.chiefOfStaff)}
-      ${renderGrowthExperiment(board.growthExperiment)}
+
+    ${renderConnectedSources(board.integrations)}
+
+    <div class="council-grid" style="margin-top: 16px;">
+      ${cardsHtml}
     </div>
-  </section>`;
+  `;
+
+  return renderShell("conselho", {
+    ...options,
+    title: "Conselho · Stride OS",
+    pageTitle: "Conselho do Founder",
+    pageHint: board.date ? `memorando de ${escapeHtml(board.date)}` : undefined,
+    topbarActions: `<form method="post" action="/agents/run/board"><button type="submit" class="secondary compact">Regerar agora</button></form>`
+  }, content);
 }
 
-function renderIntegrations(integrations = []) {
+function renderConnectedSources(integrations = []) {
   if (!Array.isArray(integrations) || integrations.length === 0) return "";
-  return `<article class="board-card integrations-card">
-    <h3>Connected Sources</h3>
-    <div class="integration-list">
+  return `<section class="card compact">
+    <div class="card-head"><p class="eyebrow">Fontes conectadas</p><h3>Sinais que alimentaram este conselho</h3></div>
+    <div class="card-grid cols-3">
       ${integrations
         .map(
-          (integration) => `<p>
-            <span>${escapeHtml(integration.name || "")}</span>
-            <strong>${escapeHtml(integration.status || "")}</strong>
-            <small>${escapeHtml(integration.detail || "")}</small>
-          </p>`
+          (integration) => `<div style="border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: var(--surface-soft);">
+            <p style="font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">${escapeHtml(integration.name || "")}</p>
+            <p style="font-weight: 600; font-size: 13px; margin-top: 4px;">${escapeHtml(integration.status || "")}</p>
+            ${integration.detail ? `<p style="color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.4;">${escapeHtml(integration.detail)}</p>` : ""}
+          </div>`
         )
         .join("")}
     </div>
-  </article>`;
+  </section>`;
 }
 
-function renderBoardCard(card = {}) {
-  if (!card.title) return "";
-  const rows = [
-    ["Summary", card.summary],
-    ["Implication", card.implication],
-    ["Distribution bet", card.distributionBet],
-    ["Product bet", card.productBet],
-    ["Reasoning", card.reasoning],
-    ["Today focus", card.todayFocus],
-    ["Risk", card.risk],
-    ["Next move", card.nextMove]
+function renderCouncilCard(card, ptTitle) {
+  if (!card || !card.title) return "";
+  const fields = [
+    ["Resumo", card.summary],
+    ["Implicação", card.implication],
+    ["Aposta de distribuição", card.distributionBet],
+    ["Aposta de produto", card.productBet],
+    ["Raciocínio", card.reasoning],
+    ["Foco do dia", card.todayFocus],
+    ["Risco", card.risk],
+    ["Próximo movimento", card.nextMove]
   ];
 
-  return `<article class="board-card">
-    <h3>${escapeHtml(card.title)}</h3>
-    ${rows.map(([label, value]) => renderBoardField(label, value)).join("")}
-    ${renderBoardList("Signals", card.topSignals, renderSignalRow)}
-    ${renderBoardList("Recommended actions", card.recommendedActions)}
-    ${renderBoardExperiment(card.experiment)}
-    ${renderBoardList("Build now", card.roadmapNow)}
-    ${renderBoardList("Later", card.roadmapLater)}
-    ${renderBoardList("Decisions", card.decisions)}
+  return `<article class="card council-card">
+    <div class="card-head"><p class="eyebrow">${escapeHtml(ptTitle)}</p><h3>${escapeHtml(card.title)}</h3></div>
+    ${fields.map(([label, value]) => renderCouncilField(label, value)).join("")}
+    ${renderCouncilList("Sinais", card.topSignals, renderSignalItem)}
+    ${renderCouncilList("Ações recomendadas", card.recommendedActions)}
+    ${renderCouncilExperiment(card.experiment)}
+    ${renderCouncilList("Construir agora", card.roadmapNow)}
+    ${renderCouncilList("Depois", card.roadmapLater)}
+    ${renderCouncilList("Decisões", card.decisions)}
   </article>`;
 }
 
-function renderGrowthExperiment(experiment = {}) {
+function renderGrowthExperimentCard(experiment = {}) {
   if (!experiment.title) return "";
-  return `<article class="board-card growth-experiment">
-    <h3>${escapeHtml(experiment.title)}</h3>
-    ${renderBoardField("Name", experiment.name)}
-    ${renderBoardField("Channel", experiment.channel)}
-    ${renderBoardField("Hypothesis", experiment.hypothesis)}
-    ${renderBoardField("Action", experiment.action)}
-    ${renderBoardField("Evidence", experiment.evidence)}
-    ${renderBoardField("Success metric", experiment.successMetric)}
-    ${experiment.sourceUrl ? `<p><span>Source</span><a href="${escapeHtml(experiment.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(experiment.sourceUrl)}</a></p>` : ""}
+  return `<article class="card council-card council-experiment">
+    <div class="card-head"><p class="eyebrow">Experimento de Crescimento</p><h3>${escapeHtml(experiment.title)}</h3></div>
+    ${renderCouncilField("Nome", experiment.name)}
+    ${renderCouncilField("Canal", experiment.channel)}
+    ${renderCouncilField("Hipótese", experiment.hypothesis)}
+    ${renderCouncilField("Ação", experiment.action)}
+    ${renderCouncilField("Evidência", experiment.evidence)}
+    ${renderCouncilField("Métrica de sucesso", experiment.successMetric)}
+    ${experiment.sourceUrl ? `<p class="field"><span>Fonte</span><a href="${escapeHtml(experiment.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(experiment.sourceUrl)}</a></p>` : ""}
   </article>`;
 }
 
-function renderBoardExperiment(experiment) {
-  if (!experiment) return "";
-  return `<div class="board-subcard">
-    <strong>${escapeHtml(experiment.name || "Experiment")}</strong>
-    ${renderBoardField("Hypothesis", experiment.hypothesis)}
-    ${renderBoardField("Metric", experiment.metric)}
-    ${renderBoardField("Duration", experiment.duration)}
-  </div>`;
-}
-
-function renderBoardField(label, value) {
+function renderCouncilField(label, value) {
   if (!value) return "";
-  return `<p><span>${escapeHtml(label)}</span>${escapeHtml(value)}</p>`;
+  return `<p class="field"><span>${escapeHtml(label)}</span>${escapeHtml(value)}</p>`;
 }
 
-function renderBoardList(label, values, renderer = (value) => `<li>${escapeHtml(value)}</li>`) {
+function renderCouncilList(label, values, renderer) {
   if (!Array.isArray(values) || values.length === 0) return "";
-  return `<div class="board-list">
+  const render = renderer || ((value) => `<li>${escapeHtml(value)}</li>`);
+  return `<div class="list">
     <span>${escapeHtml(label)}</span>
-    <ul>${values.map((value) => renderer(value)).join("")}</ul>
+    <ul>${values.map((v) => render(v)).join("")}</ul>
   </div>`;
 }
 
-function renderSignalRow(signal = {}) {
-  const source = signal.url ? `<a href="${escapeHtml(signal.url)}" target="_blank" rel="noreferrer">${escapeHtml(signal.source || "source")}</a>` : escapeHtml(signal.source || "source");
-  return `<li><strong>${escapeHtml(signal.label || "")}</strong><small>${source}${signal.evidence ? ` - ${escapeHtml(signal.evidence)}` : ""}</small></li>`;
+function renderSignalItem(signal = {}) {
+  const source = signal.url
+    ? `<a href="${escapeHtml(signal.url)}" target="_blank" rel="noreferrer">${escapeHtml(signal.source || "fonte")}</a>`
+    : escapeHtml(signal.source || "fonte");
+  return `<li><strong>${escapeHtml(signal.label || "")}</strong><small>${source}${signal.evidence ? ` · ${escapeHtml(signal.evidence)}` : ""}</small></li>`;
 }
 
-function renderAgentStatus(label, state, schedule) {
-  return `<p>
-    <span>${escapeHtml(label)}</span>
-    ${state?.date ? `Last: ${escapeHtml(state.date)} at ${escapeHtml(formatTime(state.createdAt))}` : "Last: never"}
-    <small>Schedule: ${escapeHtml(schedule)}</small>
-  </p>`;
+function renderCouncilExperiment(experiment) {
+  if (!experiment) return "";
+  return `<div class="subcard">
+    <strong>${escapeHtml(experiment.name || "Experimento")}</strong>
+    ${renderCouncilField("Hipótese", experiment.hypothesis)}
+    ${renderCouncilField("Métrica", experiment.metric)}
+    ${renderCouncilField("Duração", experiment.duration)}
+  </div>`;
 }
 
-function formatTime(value) {
-  if (!value) return "";
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Sao_Paulo",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false
-    }).format(new Date(value));
-  } catch {
-    return value;
+// ============================================================================
+// PAGE: APRENDIZADOS
+// ============================================================================
+
+function renderLearningsPage(queue, options) {
+  const stats = computeLearningStats(queue);
+  const published = queue.items.filter((i) => i.status === "published").sort(compareByDateDesc);
+  const rejected = queue.items.filter((i) => i.status === "rejected").sort(compareByDateDesc);
+  const topThemes = extractTopThemes(published, 5);
+  const patterns = computePatterns(queue);
+
+  const content = `
+    <div class="page-head">
+      <p class="eyebrow">Aprendizados</p>
+      <h1>O que está funcionando</h1>
+      <p>Performance, padrões e recomendações com base no que foi publicado e rejeitado. Os dados crescem conforme você usa.</p>
+    </div>
+
+    <div class="metric-grid">
+      <div class="metric"><div class="label">Publicados</div><div class="value">${stats.published}</div><div class="delta">${stats.publishedThisWeek} esta semana</div></div>
+      <div class="metric"><div class="label">Aprovação</div><div class="value">${stats.approvalRate}%</div><div class="delta">${stats.approved} aprovados de ${stats.reviewed} revisados</div></div>
+      <div class="metric"><div class="label">Rejeitados</div><div class="value">${stats.rejected}</div><div class="delta">${stats.rejectionRate}% do total revisado</div></div>
+      <div class="metric"><div class="label">Falhas de publicação</div><div class="value">${stats.failed}</div><div class="delta">${stats.failed > 0 ? "Confira os erros" : "Sem falhas"}</div></div>
+    </div>
+
+    <div class="card-grid cols-2" style="gap: 16px;">
+      <section class="card">
+        <div class="card-head"><h3>Top temas dos publicados</h3><p class="subtle">Palavras mais frequentes nos posts já publicados.</p></div>
+        ${
+          topThemes.length === 0
+            ? `<p class="subtle">Sem publicações suficientes para extrair temas.</p>`
+            : `<div class="row" style="gap: 8px;">${topThemes
+                .map(
+                  (theme) => `<div style="display: flex; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft);">
+                    <span style="font-weight: 500;">${escapeHtml(theme.word)}</span>
+                    <span class="subtle" style="font-size: 12px;">${theme.count} post${theme.count === 1 ? "" : "s"}</span>
+                  </div>`
+                )
+                .join("")}</div>`
+        }
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h3>Padrões aprendidos</h3><p class="subtle">Como cada tipo de conteúdo se comporta no funil.</p></div>
+        ${
+          patterns.length === 0
+            ? `<p class="subtle">Volume ainda baixo. Os padrões aparecem após algumas dezenas de itens.</p>`
+            : `<div class="row" style="gap: 6px;">${patterns
+                .map(
+                  (p) => `<div style="display: flex; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft);">
+                    <span style="font-weight: 500;">${escapeHtml(p.label)}</span>
+                    <span class="subtle" style="font-size: 12px;">${escapeHtml(p.detail)}</span>
+                  </div>`
+                )
+                .join("")}</div>`
+        }
+      </section>
+    </div>
+
+    <section class="card" style="margin-top: 16px;">
+      <div class="card-head"><h3>Posts publicados</h3><p class="subtle">Histórico recente. Os IDs do X permitem cruzar com métricas externas.</p></div>
+      ${
+        published.length === 0
+          ? `<p class="subtle">Nenhum post publicado ainda.</p>`
+          : published
+              .slice(0, 12)
+              .map(
+                (item) => `<div style="padding: 12px 0; border-bottom: 1px solid var(--line);">
+                  <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px;">
+                    <span class="pill type">${escapeHtml(typeLabel(item))}</span>
+                    <span class="subtle" style="font-size: 12px;">${escapeHtml(formatDate(item.updatedAt))}</span>
+                  </div>
+                  <p style="font-size: 13.5px; line-height: 1.5; color: var(--ink-soft);">${escapeHtml(truncate(item.text, 220))}</p>
+                  ${item.xPostId ? `<p class="subtle" style="font-size: 11.5px; margin-top: 6px;">X post ID: ${escapeHtml(item.xPostId)}</p>` : ""}
+                  ${item.manualPublishedAt ? `<p class="subtle" style="font-size: 11.5px; margin-top: 6px;">Marcado como postado manualmente.</p>` : ""}
+                </div>`
+              )
+              .join("")
+      }
+    </section>
+
+    <section class="card" style="margin-top: 16px;">
+      <div class="card-head"><h3>O que foi rejeitado</h3><p class="subtle">Itens com motivo registrado ajudam a IA a calibrar próximas sugestões.</p></div>
+      ${
+        rejected.length === 0
+          ? `<p class="subtle">Nenhum item rejeitado.</p>`
+          : rejected
+              .slice(0, 10)
+              .map(
+                (item) => `<div style="padding: 12px 0; border-bottom: 1px solid var(--line);">
+                  <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px;">
+                    <span class="pill type">${escapeHtml(typeLabel(item))}</span>
+                    <span class="subtle" style="font-size: 12px;">${escapeHtml(formatDate(item.rejectedAt || item.updatedAt))}</span>
+                  </div>
+                  <p style="font-size: 13.5px; line-height: 1.5; color: var(--ink-soft);">${escapeHtml(truncate(item.text, 200))}</p>
+                  ${item.rejectionReason ? `<p style="margin-top: 6px; padding: 8px 10px; background: var(--danger-soft); border-radius: 6px; font-size: 12.5px; color: var(--danger);"><strong>Motivo:</strong> ${escapeHtml(item.rejectionReason)}</p>` : `<p class="subtle" style="font-size: 12px; margin-top: 6px;">Sem motivo registrado.</p>`}
+                </div>`
+              )
+              .join("")
+      }
+    </section>
+  `;
+
+  const partition = partitionQueue(queue);
+  const pendingTotal = partition.posts.length + partition.replies.length + partition.comunidade.length + partition.moments.length;
+
+  return renderShell("aprendizados", {
+    ...options,
+    title: "Aprendizados · Stride OS",
+    pageTitle: "Aprendizados",
+    pageHint: stats.published > 0 ? `${stats.published} publicado${stats.published === 1 ? "" : "s"} no total` : "histórico em construção",
+    queueHint: { pending: pendingTotal || undefined }
+  }, content);
+}
+
+function computeLearningStats(queue) {
+  const counts = queue.items.reduce(
+    (acc, item) => {
+      acc.total += 1;
+      acc[item.status] = (acc[item.status] || 0) + 1;
+      return acc;
+    },
+    { total: 0 }
+  );
+
+  const reviewed = (counts.approved || 0) + (counts.rejected || 0) + (counts.published || 0);
+  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const publishedThisWeek = queue.items.filter(
+    (i) => i.status === "published" && i.updatedAt && new Date(i.updatedAt).getTime() > oneWeekAgo
+  ).length;
+
+  return {
+    total: counts.total,
+    published: counts.published || 0,
+    approved: counts.approved || 0,
+    rejected: counts.rejected || 0,
+    failed: counts.failed || 0,
+    draft: counts.draft || 0,
+    reviewed,
+    approvalRate: reviewed > 0 ? Math.round(((counts.approved || 0) + (counts.published || 0)) / reviewed * 100) : 0,
+    rejectionRate: reviewed > 0 ? Math.round((counts.rejected || 0) / reviewed * 100) : 0,
+    publishedThisWeek
+  };
+}
+
+const STOPWORDS_PT_EN = new Set([
+  "the", "and", "you", "for", "with", "this", "that", "your", "from", "are", "not", "but", "what", "when", "have", "was", "all", "one", "out", "get", "got", "can", "will", "just", "like", "than", "into", "more", "they", "their", "them", "about", "would", "could", "should", "some", "any", "who", "how", "why", "where", "which", "now", "also", "most",
+  "que", "para", "com", "por", "uma", "dos", "das", "como", "mais", "muito", "isso", "esse", "essa", "ele", "ela", "você", "voce", "seu", "sua", "ser", "estar", "tem", "tinha", "está", "esta", "são", "sao", "foi", "vai", "vão", "vao", "este", "estes", "essas", "esses", "tudo", "todo", "toda", "minha", "meu", "nosso", "nossos",
+  "https", "http", "com", "www"
+]);
+
+function extractTopThemes(items, limit) {
+  const counter = new Map();
+  for (const item of items) {
+    if (!item.text) continue;
+    const words = item.text
+      .toLowerCase()
+      .replace(/[^a-z0-9áéíóúãõâêîôûç\s]/gi, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 5 && !STOPWORDS_PT_EN.has(w));
+    const seen = new Set();
+    for (const w of words) {
+      if (seen.has(w)) continue;
+      seen.add(w);
+      counter.set(w, (counter.get(w) || 0) + 1);
+    }
   }
+  return [...counter.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .filter(([, count]) => count >= 2)
+    .map(([word, count]) => ({ word, count }));
 }
 
-function renderItem(item) {
+function computePatterns(queue) {
+  const patterns = [];
+  const byType = { posts: { total: 0, published: 0, rejected: 0 }, replies: { total: 0, published: 0, rejected: 0 }, comunidade: { total: 0, published: 0, rejected: 0 }, moments: { total: 0, published: 0, rejected: 0 } };
+
+  for (const item of queue.items) {
+    const cat = classifyItem(item);
+    if (!byType[cat]) continue;
+    byType[cat].total += 1;
+    if (item.status === "published") byType[cat].published += 1;
+    if (item.status === "rejected") byType[cat].rejected += 1;
+  }
+
+  const labelMap = { posts: "Posts no perfil", replies: "Replies", comunidade: "Comunidade", moments: "Founder Moments" };
+  for (const [cat, counts] of Object.entries(byType)) {
+    if (counts.total < 2) continue;
+    const rate = counts.total > 0 ? Math.round((counts.published / counts.total) * 100) : 0;
+    patterns.push({
+      label: labelMap[cat],
+      detail: `${counts.published}/${counts.total} publicados · ${rate}% conversão`
+    });
+  }
+
+  return patterns;
+}
+
+// ============================================================================
+// PAGE: CONFIGURAÇÕES
+// ============================================================================
+
+function renderSettingsPage(_queue, options) {
+  const integrations = describeIntegrations(options);
+  const google = options.googleAnalytics || {};
+
+  const integrationCards = integrations
+    .map(
+      (i) => `<div style="display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);">
+        <div>
+          <p style="font-weight: 600; font-size: 14px;">${escapeHtml(i.name)}</p>
+          <p class="subtle" style="font-size: 12.5px; margin-top: 4px; line-height: 1.4;">${escapeHtml(i.description)}</p>
+        </div>
+        <div style="text-align: right;">
+          <span class="pill ${i.statusClass}">${escapeHtml(i.status)}</span>
+        </div>
+      </div>`
+    )
+    .join("");
+
+  const content = `
+    <div class="page-head">
+      <p class="eyebrow">Configurações</p>
+      <h1>Operação e integrações</h1>
+      <p>Conecte fontes, ajuste agentes e revise o modo de operação. Variáveis de ambiente são gerenciadas no Render.</p>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>Modo de operação</h3>
+        <p class="subtle">${options.dryRun ? "Em dry run nada é publicado no X. Use para testar aprovações sem risco." : "Publicação real está ligada. Posts aprovados podem ir ao X."}</p>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span class="pill ${options.dryRun ? "draft" : "approved"}" style="font-size: 13px;">${options.dryRun ? "Dry run" : "Live"}</span>
+        <span class="subtle" style="font-size: 12.5px;">Configure <code style="background: var(--surface-soft); padding: 1px 5px; border-radius: 4px; font-size: 12px;">DRY_RUN</code> nas variáveis do Render.</span>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 16px;">
+      <div class="card-head">
+        <h3>Integrações</h3>
+        <p class="subtle">Cada integração alimenta os diretores ou habilita a publicação. Sem chave configurada, o sistema cai num fallback baseado em regras.</p>
+      </div>
+      <div class="row" style="gap: 8px;">
+        ${integrationCards}
+      </div>
+      ${
+        google.configured
+          ? `<div style="margin-top: 16px; display: flex; gap: 8px;">
+              <form method="post" action="/auth/google">
+                <button type="submit" class="secondary compact">${google.connected ? "Reconectar Google Analytics" : "Conectar Google Analytics"}</button>
+              </form>
+            </div>`
+          : ""
+      }
+    </section>
+
+    <section class="card" style="margin-top: 16px;">
+      <div class="card-head">
+        <h3>Agentes do Render</h3>
+        <p class="subtle">Os agentes rodam dentro do Render no horário programado. Você pode forçar agora, sem afetar o agendamento.</p>
+      </div>
+      <div class="row" style="gap: 10px;">
+        ${renderAgentRow("Conselho do Founder", options.agentState?.founderBoard, "08:30 BRT", "/agents/run/board")}
+        ${renderAgentRow("Pacote de crescimento", options.agentState?.growthPack, "09:00 BRT", "/agents/run/growth")}
+        ${renderAgentRow("Founder moment", options.agentState?.founderMoment, "10:30 BRT", "/agents/run/founder-moment")}
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 16px;">
+      <div class="card-head">
+        <h3>Publicação automática</h3>
+        <p class="subtle">${options.publishIntervalMinutes > 0 ? `O publisher roda a cada ${options.publishIntervalMinutes} minuto${options.publishIntervalMinutes === 1 ? "" : "s"}.` : "Publicação automática desligada. Defina PUBLISH_INTERVAL_MINUTES para ativar."}</p>
+      </div>
+    </section>
+  `;
+
+  return renderShell("configuracoes", {
+    ...options,
+    title: "Configurações · Stride OS",
+    pageTitle: "Configurações"
+  }, content);
+}
+
+function renderAgentRow(label, state, schedule, runUrl) {
+  const last = state?.createdAt ? `${formatDate(state.createdAt)} às ${formatTime(state.createdAt)}` : "ainda não rodou";
+  return `<div style="display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft);">
+    <div>
+      <p style="font-weight: 500; font-size: 13.5px;">${escapeHtml(label)}</p>
+      <p class="subtle" style="font-size: 12px; margin-top: 2px;">Agendado ${escapeHtml(schedule)} · última execução ${escapeHtml(last)}</p>
+    </div>
+    <form method="post" action="${escapeHtml(runUrl)}">
+      <button type="submit" class="secondary compact">Rodar agora</button>
+    </form>
+  </div>`;
+}
+
+function describeIntegrations(_options) {
+  const env = process.env;
+  const x = !!env.X_USER_ACCESS_TOKEN && !!env.X_REFRESH_TOKEN && !!env.X_CLIENT_ID && !!env.X_CLIENT_SECRET;
+  const openai = !!env.OPENAI_API_KEY;
+  const plausible = !!env.PLAUSIBLE_API_KEY && !!env.PLAUSIBLE_SITE_ID;
+  const posthog = !!env.POSTHOG_PERSONAL_API_KEY && !!env.POSTHOG_PROJECT_ID;
+  const reddit = !!env.REDDIT_SUBREDDITS;
+  const targets = !!env.TARGET_X_HANDLES;
+  const google = _options.googleAnalytics || {};
+
+  return [
+    {
+      name: "X (Twitter)",
+      description: "OAuth 2.0 com tweet.read, tweet.write, users.read e offline.access. Usado para publicar e ler métricas dos posts.",
+      ...statusOf(x)
+    },
+    {
+      name: "OpenAI",
+      description: env.OPENAI_MODEL ? `Modelo ${env.OPENAI_MODEL}. Estrutura saída via Responses API.` : "Estrutura saída via Responses API. Sem chave, cai em fallback baseado em regras.",
+      ...statusOf(openai)
+    },
+    {
+      name: "Plausible",
+      description: env.PLAUSIBLE_SITE_ID ? `Site ${env.PLAUSIBLE_SITE_ID}. Sinais de tráfego e conversão.` : "Sinais de tráfego e conversão da landing.",
+      ...statusOf(plausible)
+    },
+    {
+      name: "PostHog",
+      description: env.POSTHOG_HOST ? `Host ${env.POSTHOG_HOST}. Sinais de produto e funil.` : "Sinais de produto e funil.",
+      ...statusOf(posthog)
+    },
+    {
+      name: "Reddit",
+      description: env.REDDIT_SUBREDDITS ? `Subreddits: ${env.REDDIT_SUBREDDITS}.` : "Radar de comunidades de fundadores.",
+      ...statusOf(reddit)
+    },
+    {
+      name: "Contas no X (radar)",
+      description: env.TARGET_X_HANDLES ? `Monitorando: ${env.TARGET_X_HANDLES}.` : "Monitora contas-âncora para sinais de mercado.",
+      ...statusOf(targets)
+    },
+    {
+      name: "Google Analytics",
+      description: google.connected
+        ? `GA4 ${google.propertyId} conectado${google.connectedAt ? ` em ${formatTime(google.connectedAt)}` : ""}.`
+        : google.configured
+          ? "Pronto para conectar via OAuth."
+          : "Adicione GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET e GOOGLE_ANALYTICS_PROPERTY_ID no Render.",
+      status: google.connected ? "Conectado" : google.configured ? "Pronto" : "Não configurado",
+      statusClass: google.connected ? "approved" : google.configured ? "type" : "draft"
+    }
+  ];
+}
+
+function statusOf(ok) {
+  return ok
+    ? { status: "Conectado", statusClass: "approved" }
+    : { status: "Não configurado", statusClass: "draft" };
+}
+
+// ============================================================================
+// ITEM RENDERING (shared by /aprovacao)
+// ============================================================================
+
+function renderItem(item, redirectTo) {
   const charCount = item.text?.length || 0;
-  const title =
-    item.format === "founder-moment"
-      ? "Founder moment"
-      : item.format === "community-post"
-        ? "Community post"
-        : item.type === "reply"
-          ? "Suggested reply"
-          : "Suggested post";
+  const title = typeLabel(item);
   const actionHint = getActionHint(item);
-  return `<article class="item ${escapeHtml(item.status)} ${item.format === "founder-moment" ? "founder-moment" : ""}">
+
+  return `<article class="item ${escapeHtml(item.status)}">
     <div class="item-head">
-      <div>
-        <span class="pill">${escapeHtml(item.status)}</span>
-        <span class="type-pill">${escapeHtml(item.format === "founder-moment" ? "manual image" : item.format === "community-post" ? "community" : item.type)}</span>
-        <span class="item-title">${escapeHtml(item.title || title)}</span>
+      <div class="meta">
+        <span class="pill ${escapeHtml(item.status)}">${escapeHtml(statusLabelPt(item.status))}</span>
+        <span class="pill type">${escapeHtml(title)}</span>
+        ${item.title ? `<span class="item-title">${escapeHtml(item.title)}</span>` : ""}
       </div>
       <span class="chars">${charCount}/280</span>
     </div>
     <p class="action-hint">${escapeHtml(actionHint)}</p>
 
     ${item.error ? `<p class="alert error">${escapeHtml(item.error)}</p>` : ""}
-    ${item.xPostId ? `<p class="alert success">Published X post ID: ${escapeHtml(item.xPostId)}</p>` : ""}
-    ${item.manualPublishedAt ? `<p class="alert success">Marked as posted manually.</p>` : ""}
+    ${item.xPostId ? `<p class="alert success">X post ID: ${escapeHtml(item.xPostId)}</p>` : ""}
+    ${item.manualPublishedAt ? `<p class="alert info">Marcado como postado manualmente.</p>` : ""}
+    ${item.rejectionReason ? `<p class="alert error">Motivo da rejeição: ${escapeHtml(item.rejectionReason)}</p>` : ""}
+
     ${renderStrategyContext(item)}
     ${renderFounderMomentContext(item)}
     ${renderTargetContext(item)}
 
     <form method="post" action="/items/${encodeURIComponent(item.id)}/update">
-      <label class="field-label">Public text</label>
+      <input type="hidden" name="_redirect" value="${escapeHtml(redirectTo || "/aprovacao")}">
+      <label class="field-label">Texto público (em inglês)</label>
       <textarea name="text" maxlength="280" ${item.status === "published" ? "readonly" : ""}>${escapeHtml(item.text || "")}</textarea>
+      ${renderRejectionReasonField(item)}
       ${renderAdvancedFields(item)}
-      <div class="actions">
+      <div class="actions" style="margin-top: 12px;">
         ${renderActions(item)}
       </div>
     </form>
   </article>`;
 }
 
-function renderItemSection(title, description, items, kind, collapsed = false, actions = "") {
-  const head = `<div class="section-head">
-      <div>
-        <h2>${escapeHtml(title)}</h2>
-        <p>${escapeHtml(description)}</p>
-      </div>
-      <strong>${items.length}</strong>
-    </div>`;
-  const actionBar = actions ? `<div class="section-actions">${actions}</div>` : "";
-  const body = `<div class="items">
-      ${items.map((item) => renderItem(item)).join("") || `<p class="empty">Nothing here.</p>`}
-    </div>`;
-
-  if (collapsed) {
-    return `<details class="queue-section collapsible ${escapeHtml(kind)}">
-      <summary>${head}</summary>
-      ${actionBar}
-      ${body}
-    </details>`;
-  }
-
-  return `<section class="queue-section ${escapeHtml(kind)}">
-    ${head}
-    ${actionBar}
-    ${body}
-  </section>`;
+function renderRejectionReasonField(item) {
+  if (!["draft", "failed", "approved"].includes(item.status)) return "";
+  return `<details class="advanced" style="margin-top: 10px;">
+    <summary>Motivo da rejeição (opcional, ajuda a IA a calibrar)</summary>
+    <div class="advanced-body">
+      <textarea name="rejectionReason" placeholder="Ex.: tom errado, fora de marca, repetitivo, sem evidência..."></textarea>
+      <p class="subtle" style="font-size: 12px;">Aplicado apenas se você clicar em Rejeitar.</p>
+    </div>
+  </details>`;
 }
 
-function getActionHint(item) {
-  if (item.format === "founder-moment" && item.status === "published") return "Manual image post marked as done.";
-  if (item.format === "founder-moment") return "Take the suggested photo, edit the caption, then post it manually on X.";
-  if (item.format === "community-post") return "Post this manually inside the build-in-public community, then mark it as posted.";
-  if (item.status === "approved") return "Ready. Publish now, send back to draft, or reject.";
-  if (item.status === "failed") return "Publishing failed. Review the error, edit if needed, then approve again.";
-  if (item.status === "rejected") return "Rejected. Restore to draft or delete it from the queue.";
-  if (item.status === "published") return "Published to X.";
-  if (item.type === "reply") return "Review the target post and suggested reply before approving.";
-  return "Review the post text, then approve or reject.";
+function renderAdvancedFields(item) {
+  return `<details class="advanced" style="margin-top: 10px;">
+    <summary>${item.format === "founder-moment" ? "Editar brief da foto" : item.type === "reply" ? "Editar contexto do reply" : "Configurações avançadas"}</summary>
+    <div class="advanced-body">
+      <div class="row cols-2">
+        <select name="type">
+          <option value="post" ${item.type === "post" ? "selected" : ""}>Post</option>
+          <option value="reply" ${item.type === "reply" ? "selected" : ""}>Reply</option>
+        </select>
+        <select name="format">
+          <option value="standard" ${!["founder-moment", "community-post"].includes(item.format) ? "selected" : ""}>Padrão</option>
+          <option value="founder-moment" ${item.format === "founder-moment" ? "selected" : ""}>Founder Moment</option>
+          <option value="community-post" ${item.format === "community-post" ? "selected" : ""}>Comunidade</option>
+        </select>
+      </div>
+      <label class="check-row" style="display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px;">
+        <input type="checkbox" name="requiresManualAsset" ${item.requiresManualAsset ? "checked" : ""} style="width: auto;">
+        Precisa de imagem/vídeo manual
+      </label>
+      <label class="check-row" style="display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px;">
+        <input type="checkbox" name="requiresManualPublish" ${item.requiresManualPublish ? "checked" : ""} style="width: auto;">
+        Precisa publicação manual
+      </label>
+      <div class="row cols-2">
+        <input name="replyToPostId" value="${escapeHtml(item.replyToPostId || "")}" placeholder="Reply post ID">
+        <input name="title" value="${escapeHtml(item.title || "")}" placeholder="Título interno">
+      </div>
+      <div class="row cols-2">
+        <input name="targetAuthor" value="${escapeHtml(item.targetAuthor || "")}" placeholder="Autor-alvo">
+        <input name="targetHandle" value="${escapeHtml(item.targetHandle || "")}" placeholder="@handle">
+      </div>
+      <input name="targetPostUrl" value="${escapeHtml(item.targetPostUrl || "")}" placeholder="URL do post-alvo">
+      <textarea name="targetPostSummary" placeholder="Resumo do post sendo respondido">${escapeHtml(item.targetPostSummary || "")}</textarea>
+      <textarea name="targetPostText" placeholder="Texto/contexto original">${escapeHtml(item.targetPostText || "")}</textarea>
+      <textarea name="replyRationale" placeholder="Por que vale responder">${escapeHtml(item.replyRationale || "")}</textarea>
+      <input name="recommendedSurface" value="${escapeHtml(item.recommendedSurface || "")}" placeholder="Superfície recomendada">
+      <input name="sourceUrl" value="${escapeHtml(item.sourceUrl || "")}" placeholder="URL da fonte">
+      <textarea name="viralThesis" placeholder="Tese viral / por que pode escalar">${escapeHtml(item.viralThesis || "")}</textarea>
+      <textarea name="evidence" placeholder="Evidência por trás da recomendação">${escapeHtml(item.evidence || "")}</textarea>
+      <textarea name="trendSignal" placeholder="Sinal de tendência">${escapeHtml(item.trendSignal || "")}</textarea>
+      <textarea name="whyNow" placeholder="Por que vale postar agora">${escapeHtml(item.whyNow || "")}</textarea>
+      <textarea name="visualBrief" placeholder="Foto/vídeo a capturar">${escapeHtml(item.visualBrief || "")}</textarea>
+      <textarea name="captureInstruction" placeholder="Como fotografar">${escapeHtml(item.captureInstruction || "")}</textarea>
+      <textarea name="postingNotes" placeholder="Nota para a publicação">${escapeHtml(item.postingNotes || "")}</textarea>
+      <textarea name="imageAlt" placeholder="Texto alternativo da imagem">${escapeHtml(item.imageAlt || "")}</textarea>
+    </div>
+  </details>`;
 }
 
 function renderStrategyContext(item) {
   if (!item.recommendedSurface && !item.viralThesis && !item.evidence && !item.trendSignal && !item.sourceUrl) return "";
-
-  return `<section class="strategy-context">
-    <div class="moment-grid">
-      ${renderMomentField("Recommended surface", item.recommendedSurface)}
-      ${renderMomentField("Viral thesis", item.viralThesis)}
-      ${renderMomentField("Evidence", item.evidence)}
-      ${renderMomentField("Trend signal", item.trendSignal)}
-      ${item.sourceUrl ? `<p><span>Source</span><a href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(item.sourceUrl)}</a></p>` : ""}
+  return `<section class="context">
+    <div class="context-grid">
+      ${renderContextField("Superfície recomendada", item.recommendedSurface)}
+      ${renderContextField("Tese viral", item.viralThesis)}
+      ${renderContextField("Evidência", item.evidence)}
+      ${renderContextField("Sinal de tendência", item.trendSignal)}
+      ${item.sourceUrl ? `<p><span>Fonte</span><a href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noreferrer" style="color: var(--info);">${escapeHtml(item.sourceUrl)}</a></p>` : ""}
     </div>
   </section>`;
 }
 
 function renderFounderMomentContext(item) {
   if (item.format !== "founder-moment" && !item.requiresManualAsset) return "";
-
-  return `<section class="moment-context">
-    <div class="moment-grid">
-      ${renderMomentField("Trend signal", item.trendSignal)}
-      ${renderMomentField("Why now", item.whyNow)}
-      ${renderMomentField("Photo to take", item.visualBrief)}
-      ${renderMomentField("How to shoot it", item.captureInstruction)}
-      ${renderMomentField("Posting note", item.postingNotes)}
-      ${renderMomentField("Alt text", item.imageAlt)}
+  return `<section class="context" style="background: var(--warning-soft); border-color: #fde68a;">
+    <div class="context-grid">
+      ${renderContextField("Sinal de tendência", item.trendSignal)}
+      ${renderContextField("Por que agora", item.whyNow)}
+      ${renderContextField("Foto a tirar", item.visualBrief)}
+      ${renderContextField("Como fotografar", item.captureInstruction)}
+      ${renderContextField("Nota de publicação", item.postingNotes)}
+      ${renderContextField("Texto alternativo", item.imageAlt)}
     </div>
   </section>`;
-}
-
-function renderMomentField(label, value) {
-  if (!value) return "";
-  return `<p><span>${escapeHtml(label)}</span>${escapeHtml(value)}</p>`;
-}
-
-function renderAdvancedFields(item) {
-  return `<details class="advanced">
-    <summary>${item.format === "founder-moment" ? "Edit photo brief" : item.type === "reply" ? "Edit reply target" : "Advanced settings"}</summary>
-    <div class="advanced-body">
-      <div class="row">
-        <select name="type">
-          <option value="post" ${item.type === "post" ? "selected" : ""}>Post</option>
-          <option value="reply" ${item.type === "reply" ? "selected" : ""}>Reply</option>
-        </select>
-        <select name="format">
-          <option value="standard" ${!["founder-moment", "community-post"].includes(item.format) ? "selected" : ""}>Standard</option>
-          <option value="founder-moment" ${item.format === "founder-moment" ? "selected" : ""}>Founder moment</option>
-          <option value="community-post" ${item.format === "community-post" ? "selected" : ""}>Community post</option>
-        </select>
-      </div>
-      <label class="check-row">
-        <input type="checkbox" name="requiresManualAsset" ${item.requiresManualAsset ? "checked" : ""}>
-        Needs manual image/video
-      </label>
-      <label class="check-row">
-        <input type="checkbox" name="requiresManualPublish" ${item.requiresManualPublish ? "checked" : ""}>
-        Needs manual publishing
-      </label>
-      <div class="row">
-        <input name="replyToPostId" value="${escapeHtml(item.replyToPostId || "")}" placeholder="Reply post ID">
-        <input name="title" value="${escapeHtml(item.title || "")}" placeholder="Internal title">
-      </div>
-      <div class="row">
-        <input name="targetAuthor" value="${escapeHtml(item.targetAuthor || "")}" placeholder="Target author">
-        <input name="targetHandle" value="${escapeHtml(item.targetHandle || "")}" placeholder="@handle">
-      </div>
-      <input name="targetPostUrl" value="${escapeHtml(item.targetPostUrl || "")}" placeholder="Target post URL">
-      <textarea name="targetPostSummary" placeholder="Short summary of the post being replied to">${escapeHtml(item.targetPostSummary || "")}</textarea>
-      <textarea name="targetPostText" placeholder="Original post text/context">${escapeHtml(item.targetPostText || "")}</textarea>
-      <textarea name="replyRationale" placeholder="Why this reply is worth posting">${escapeHtml(item.replyRationale || "")}</textarea>
-      <input name="recommendedSurface" value="${escapeHtml(item.recommendedSurface || "")}" placeholder="Recommended surface">
-      <input name="sourceUrl" value="${escapeHtml(item.sourceUrl || "")}" placeholder="Source URL">
-      <textarea name="viralThesis" placeholder="Why this could travel">${escapeHtml(item.viralThesis || "")}</textarea>
-      <textarea name="evidence" placeholder="Evidence behind this recommendation">${escapeHtml(item.evidence || "")}</textarea>
-      <textarea name="trendSignal" placeholder="Trend signal behind this idea">${escapeHtml(item.trendSignal || "")}</textarea>
-      <textarea name="whyNow" placeholder="Why this is worth posting now">${escapeHtml(item.whyNow || "")}</textarea>
-      <textarea name="visualBrief" placeholder="Photo/video to capture">${escapeHtml(item.visualBrief || "")}</textarea>
-      <textarea name="captureInstruction" placeholder="How to shoot it">${escapeHtml(item.captureInstruction || "")}</textarea>
-      <textarea name="postingNotes" placeholder="Posting note">${escapeHtml(item.postingNotes || "")}</textarea>
-      <textarea name="imageAlt" placeholder="Alt text">${escapeHtml(item.imageAlt || "")}</textarea>
-    </div>
-  </details>`;
 }
 
 function renderTargetContext(item) {
@@ -956,30 +1492,35 @@ function renderTargetContext(item) {
   const author = [item.targetAuthor, item.targetHandle].filter(Boolean).join(" ");
   const hasContext = item.targetPostUrl && item.targetPostSummary && item.replyRationale && (item.targetAuthor || item.targetHandle);
 
-  return `<section class="target-context ${hasContext ? "" : "missing"}">
-    <div class="target-head">
-      <strong>${hasContext ? "Reply target" : "Reply target missing"}</strong>
-      ${item.targetPostUrl ? `<a href="${escapeHtml(item.targetPostUrl)}" target="_blank" rel="noreferrer">Open post</a>` : ""}
+  return `<section class="context ${hasContext ? "" : "missing"}">
+    <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 8px;">
+      <strong>${hasContext ? "Post-alvo" : "Contexto do reply faltando"}</strong>
+      ${item.targetPostUrl ? `<a href="${escapeHtml(item.targetPostUrl)}" target="_blank" rel="noreferrer" style="color: var(--info); font-size: 12.5px;">Abrir post →</a>` : ""}
     </div>
-    ${hasContext ? "" : `<p><span>Needs context</span>Add the original post, author, summary, and reason before approving this reply.</p>`}
-    ${author ? `<p><span>Author</span>${escapeHtml(author)}</p>` : ""}
-    ${item.targetPostSummary ? `<p><span>Summary</span>${escapeHtml(item.targetPostSummary)}</p>` : ""}
+    ${hasContext ? "" : `<p><span>Faltando contexto</span>Adicione post original, autor, resumo e motivo antes de aprovar.</p>`}
+    ${author ? `<p><span>Autor</span>${escapeHtml(author)}</p>` : ""}
+    ${item.targetPostSummary ? `<p><span>Resumo</span>${escapeHtml(item.targetPostSummary)}</p>` : ""}
     ${item.targetPostText ? `<blockquote>${escapeHtml(item.targetPostText)}</blockquote>` : ""}
-    ${item.replyRationale ? `<p><span>Why reply</span>${escapeHtml(item.replyRationale)}</p>` : ""}
+    ${item.replyRationale ? `<p><span>Por que responder</span>${escapeHtml(item.replyRationale)}</p>` : ""}
   </section>`;
+}
+
+function renderContextField(label, value) {
+  if (!value) return "";
+  return `<p><span>${escapeHtml(label)}</span>${escapeHtml(value)}</p>`;
 }
 
 function renderActions(item) {
   if (item.status === "published") return "";
 
-  const save = `<button class="secondary" type="submit">Save edits</button>`;
-  const approve = renderAction(item, "approve", "Approve");
-  const publish = renderAction(item, "publish", "Publish now");
-  const reject = renderAction(item, "reject", "Reject");
-  const draft = renderAction(item, "draft", "Back to draft");
-  const remove = renderAction(item, "delete", "Delete");
-  const convertToPost = renderAction(item, "convert-to-post", "Convert to post");
-  const manualPosted = renderAction(item, "manual-posted", "Mark posted manually");
+  const save = `<button class="secondary compact" type="submit">Salvar</button>`;
+  const approve = renderAction(item, "approve", "Aprovar", "approve");
+  const publish = renderAction(item, "publish", "Publicar agora", "publish");
+  const reject = renderAction(item, "reject", "Rejeitar", "reject");
+  const draft = renderAction(item, "draft", "Voltar para rascunho", "draft");
+  const remove = renderAction(item, "delete", "Excluir", "delete");
+  const convertToPost = renderAction(item, "convert-to-post", "Converter em post", "convert-to-post");
+  const manualPosted = renderAction(item, "manual-posted", "Marcar como postado", "manual-posted");
 
   if (item.format === "founder-moment" || item.format === "community-post" || item.requiresManualAsset || item.requiresManualPublish) {
     if (item.status === "rejected") return `${draft}${remove}`;
@@ -992,9 +1533,110 @@ function renderActions(item) {
   return `${save}${approve}${reject}`;
 }
 
-function renderAction(item, action, label) {
-  return `<button formmethod="post" formaction="/items/${encodeURIComponent(item.id)}/${action}" class="${action}" type="submit">${label}</button>`;
+function renderAction(item, action, label, klass) {
+  return `<button formmethod="post" formaction="/items/${encodeURIComponent(item.id)}/${action}" class="${klass} compact" type="submit">${escapeHtml(label)}</button>`;
 }
+
+// ============================================================================
+// LABELS / FORMATTERS
+// ============================================================================
+
+function typeLabel(item) {
+  if (item.format === "founder-moment") return "Founder Moment";
+  if (item.format === "community-post") return "Comunidade";
+  if (item.type === "reply") return "Reply";
+  return "Post";
+}
+
+function statusLabelPt(status) {
+  const map = { draft: "rascunho", approved: "aprovado", published: "publicado", rejected: "rejeitado", failed: "falhou" };
+  return map[status] || status;
+}
+
+function getActionHint(item) {
+  if (item.format === "founder-moment" && item.status === "published") return "Imagem manual marcada como postada.";
+  if (item.format === "founder-moment") return "Tire a foto sugerida, ajuste a legenda e poste manualmente no X.";
+  if (item.format === "community-post") return "Poste manualmente na comunidade build-in-public e marque como postado.";
+  if (item.status === "approved") return "Pronto. Publique agora, volte para rascunho ou rejeite.";
+  if (item.status === "failed") return "Falhou. Revise o erro, ajuste o texto e aprove de novo.";
+  if (item.status === "rejected") return "Rejeitado. Volte para rascunho ou exclua da fila.";
+  if (item.status === "published") return "Publicado no X.";
+  if (item.type === "reply") return "Confira o post-alvo e o reply sugerido antes de aprovar.";
+  return "Revise o texto público antes de aprovar ou rejeitar.";
+}
+
+function compareByDateDesc(a, b) {
+  return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+}
+
+function truncate(text, max) {
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function formatTime(value) {
+  if (!value) return "";
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "short"
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+function formatToday() {
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      weekday: "long",
+      day: "2-digit",
+      month: "long"
+    }).format(new Date());
+  } catch {
+    return "";
+  }
+}
+
+// ============================================================================
+// ICONS (inline SVG)
+// ============================================================================
+
+function iconHome() {
+  return `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7l6-5 6 5v6.5a1 1 0 01-1 1h-3v-4H6v4H3a1 1 0 01-1-1V7z"/></svg>`;
+}
+function iconCheck() {
+  return `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5l3.5 3.5L14 4"/></svg>`;
+}
+function iconUsers() {
+  return `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><path d="M2 13.5c0-2.2 1.8-4 4-4s4 1.8 4 4"/><circle cx="11.5" cy="6.5" r="2"/><path d="M10 13.5c0-2.2 1.6-3.5 3.5-3.5"/></svg>`;
+}
+function iconChart() {
+  return `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13h12"/><path d="M4 13V9"/><path d="M7.5 13V6"/><path d="M11 13v-7"/></svg>`;
+}
+function iconCog() {
+  return `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2"/><path d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"/></svg>`;
+}
+
+// ============================================================================
+// HEAD / CSS
+// ============================================================================
 
 function renderHead(title) {
   return `<head>
@@ -1005,180 +1647,225 @@ function renderHead(title) {
     :root {
       color-scheme: light;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f4f1ea;
-      color: #18211f;
-      --surface: #fffdfa;
-      --surface-soft: #f8f5ed;
-      --line: #d9d2c2;
-      --muted: #64706d;
-      --ink: #18211f;
-      --green: #12685c;
-      --blue: #2e5c9a;
-      --red: #a63d35;
-      --amber: #8a6424;
+      --bg: #f7f7f8;
+      --surface: #ffffff;
+      --surface-soft: #fafafa;
+      --line: #e5e5e5;
+      --line-strong: #d4d4d4;
+      --ink: #0a0a0a;
+      --ink-soft: #1f1f1f;
+      --muted: #525252;
+      --primary-hover: #27272a;
+      --success: #15803d;
+      --success-soft: #f0fdf4;
+      --danger: #b91c1c;
+      --danger-soft: #fef2f2;
+      --warning: #a16207;
+      --warning-soft: #fefce8;
+      --info: #1d4ed8;
+      --info-soft: #eff6ff;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: radial-gradient(circle at top left, #eef7f4 0, transparent 280px), #f4f1ea; }
-    main, .topbar { width: min(1180px, calc(100vw - 32px)); margin: 0 auto; }
-    main { padding-bottom: 40px; }
-    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 28px 0 20px; }
-    .brand-row { display: flex; align-items: center; gap: 14px; min-width: 0; }
-    .brand-mark { width: 44px; height: 44px; border-radius: 8px; display: grid; place-items: center; background: #18211f; color: #fffdfa; font-weight: 900; font-size: 14px; }
-    .top-actions { display: flex; align-items: center; gap: 10px; }
-    h1, h2, p { margin: 0; }
-    h1 { font-size: 30px; line-height: 1.05; letter-spacing: 0; }
-    h2 { font-size: 18px; letter-spacing: 0; }
-    .subtitle { color: var(--muted); margin-top: 5px; font-size: 15px; line-height: 1.35; }
-    .eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0; color: var(--muted); font-weight: 800; margin-bottom: 6px; }
-    button, input, select, textarea { font: inherit; }
-    button { border: 0; border-radius: 7px; background: var(--ink); color: #fff; min-height: 40px; padding: 0 14px; cursor: pointer; font-weight: 800; box-shadow: 0 1px 0 rgba(0,0,0,.06); }
-    button.compact { min-height: 36px; }
-    button.secondary { background: #e4dfd3; color: var(--ink); }
-    button.approve { background: var(--green); }
-    button.publish { background: var(--blue); }
-    button.reject { background: var(--red); }
-    button.draft { background: #73624b; }
-    button.convert-to-post { background: var(--amber); }
-    button.manual-posted { background: var(--blue); }
-    button.delete { background: #4f4540; }
-    input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 7px; background: #fffefa; color: var(--ink); padding: 10px 12px; }
-    textarea { min-height: 118px; resize: vertical; line-height: 1.45; }
-    textarea:focus, input:focus, select:focus { outline: 2px solid rgba(46, 92, 154, .22); border-color: #8aa6cd; }
-    .login { min-height: 100vh; display: grid; place-items: center; }
-    .login-panel { width: min(420px, calc(100vw - 32px)); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 24px; box-shadow: 0 24px 80px rgba(31, 36, 34, .12); }
-    .login-panel form { display: grid; gap: 10px; margin-top: 20px; }
-    .status-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 8px 0 14px; }
-    .metric { background: rgba(255, 253, 250, .82); border: 1px solid var(--line); border-radius: 8px; padding: 13px 14px; }
-    .metric span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; font-weight: 700; }
-    .metric strong { font-size: 21px; letter-spacing: 0; }
-    .metric.approved strong { color: var(--green); }
-    .metric.failed strong { color: var(--red); }
-    .metric.published strong { color: var(--blue); }
-    .mode-chip { display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px; border-radius: 999px; font-weight: 900; font-size: 13px; }
-    .mode-chip.dry { background: #e7f1f5; color: #24556c; }
-    .mode-chip.live { background: #fae3df; color: #8b2d25; }
-    .mode-banner, .agent-panel, .integration-panel, .composer, .item { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 0 rgba(0,0,0,.02); }
-    .mode-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-left: 4px solid var(--blue); }
-    .mode-banner strong { display: block; font-size: 15px; margin-bottom: 3px; }
-    .mode-banner p { color: var(--muted); font-size: 14px; line-height: 1.4; }
-    .mode-banner.dry { border-color: #c6d7de; background: #f5fbfd; }
-    .mode-banner.live { border-color: #e1b8b2; background: #fff7f5; }
-    .agent-panel { display: grid; grid-template-columns: 1.1fr 1.4fr auto; gap: 14px; align-items: center; }
-    .agent-panel h2 { margin-bottom: 4px; }
-    .agent-panel p { color: var(--muted); font-size: 14px; line-height: 1.4; }
-    .integration-panel { display: grid; grid-template-columns: 1.1fr 1.4fr auto; gap: 14px; align-items: center; }
-    .integration-panel h2 { margin-bottom: 4px; }
-    .integration-panel p { color: var(--muted); font-size: 14px; line-height: 1.4; }
-    .integration-status-card { border: 1px solid #e4dfd2; border-radius: 8px; background: #fffefa; padding: 10px 12px; color: var(--ink); }
-    .integration-status-card span { display: block; font-size: 12px; font-weight: 900; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
-    .integration-status-card strong { display: block; font-size: 15px; }
-    .integration-status-card small { display: block; color: var(--muted); margin-top: 2px; line-height: 1.35; }
-    button:disabled { opacity: .45; cursor: not-allowed; }
-    .agent-status { display: grid; gap: 8px; }
-    .agent-status p { border: 1px solid #e4dfd2; border-radius: 8px; background: #fffefa; padding: 10px 12px; color: var(--ink); }
-    .agent-status span { display: block; font-size: 12px; font-weight: 900; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
-    .agent-status small { display: block; color: var(--muted); margin-top: 2px; }
-    .boardroom { margin: 28px 0 18px; }
-    .board-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-    .board-head p { color: var(--muted); font-size: 14px; line-height: 1.4; margin-top: 4px; max-width: 820px; }
-    .board-meta { display: grid; justify-items: end; color: var(--muted); font-size: 13px; font-weight: 800; }
-    .board-meta span { color: var(--ink); font-size: 15px; }
-    .board-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .board-card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 15px; box-shadow: 0 1px 0 rgba(0,0,0,.02); }
-    .board-card h3 { font-size: 16px; margin: 0 0 10px; letter-spacing: 0; }
-    .board-card p { color: #26302e; font-size: 14px; line-height: 1.45; margin: 0 0 10px; }
-    .board-card p span, .board-list span { display: block; color: var(--muted); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0; margin-bottom: 3px; }
-    .board-list { margin-top: 10px; }
-    .board-list ul { margin: 0; padding-left: 18px; display: grid; gap: 7px; }
-    .board-list li { color: #26302e; font-size: 14px; line-height: 1.4; }
-    .board-list li small { display: block; color: var(--muted); margin-top: 2px; }
-    .board-card a { color: var(--blue); font-weight: 800; overflow-wrap: anywhere; }
-    .board-subcard { border-top: 1px solid #e4dfd2; padding-top: 10px; margin-top: 10px; }
-    .board-subcard strong { display: block; font-size: 14px; margin-bottom: 7px; }
-    .growth-experiment { border-color: #c7d6d0; background: #f8fcfa; }
-    .integrations-card { background: #fffefa; }
-    .integration-list { display: grid; gap: 9px; }
-    .integration-list p { border: 1px solid #e4dfd2; border-radius: 8px; padding: 10px; margin: 0; background: #fffdfa; }
-    .integration-list strong { display: inline-flex; min-height: 22px; align-items: center; border-radius: 999px; background: #e7eee9; color: #36554d; padding: 0 8px; font-size: 12px; text-transform: uppercase; }
-    .integration-list small { display: block; color: var(--muted); margin-top: 5px; line-height: 1.35; }
-    .empty-board { border: 1px dashed #d4cbbb; border-radius: 8px; padding: 16px; background: rgba(255,253,250,.55); }
-    .composer { padding: 0; overflow: hidden; }
-    .composer summary { cursor: pointer; padding: 14px 16px; font-weight: 800; }
-    .composer-body { border-top: 1px solid var(--line); padding: 16px; }
-    .composer form, .item form { display: grid; gap: 10px; }
-    .queue-section { margin: 26px 0; }
-    .queue-section.collapsible { border: 0; }
-    .queue-section.collapsible > summary { cursor: pointer; list-style: none; }
-    .queue-section.collapsible > summary::-webkit-details-marker { display: none; }
-    .section-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 10px; }
-    .section-head p { color: var(--muted); font-size: 14px; line-height: 1.4; margin-top: 4px; }
-    .section-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 0 0 10px; }
-    .section-head strong { min-width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; background: #e5dfd2; font-size: 14px; }
-    .row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; }
-    .item { position: relative; overflow: hidden; }
-    .item::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: #d4cbbb; }
-    .item.approved::before { background: var(--green); }
-    .item.failed::before { background: var(--red); }
-    .item.published::before { background: var(--blue); }
-    .item.founder-moment::before { background: var(--amber); }
-    .item-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 6px; }
-    .pill, .type-pill { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 0 9px; font-size: 12px; font-weight: 900; margin-right: 7px; }
-    .pill { background: #e4dfd3; color: var(--ink); }
-    .item.approved .pill { background: #dcefe8; color: #0f5d52; }
-    .item.failed .pill { background: #f4dedb; color: #8d3029; }
-    .item.published .pill { background: #dfe9f6; color: #28558e; }
-    .type-pill { background: #edf0ee; color: #53615d; }
-    .item-title { font-weight: 900; margin-right: 8px; }
-    .muted, .chars { color: var(--muted); font-size: 13px; }
-    .action-hint { color: var(--muted); font-size: 13px; line-height: 1.4; margin-bottom: 12px; }
-    .field-label { color: var(--muted); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0; }
-    .target-context { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); padding: 13px; margin: 10px 0 12px; display: grid; gap: 9px; }
-    .target-context.missing { border-color: #e1b8b2; background: #fff7f5; }
-    .target-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-    .target-head strong { font-size: 14px; }
-    .target-head a { color: var(--blue); font-size: 13px; font-weight: 800; text-decoration: none; }
-    .target-context p { font-size: 14px; line-height: 1.4; }
-    .target-context span { display: block; color: var(--muted); font-size: 12px; font-weight: 900; margin-bottom: 2px; }
-    .target-context blockquote { margin: 0; border-left: 3px solid #c8bea9; padding-left: 10px; color: #3d4644; font-size: 14px; line-height: 1.45; }
-    .strategy-context, .moment-context { border: 1px solid #d7d2c4; border-radius: 8px; background: #f8f5ed; padding: 13px; margin: 10px 0 12px; }
-    .strategy-context a { color: var(--blue); font-weight: 800; overflow-wrap: anywhere; }
-    .moment-context { border-color: #e1c994; background: #fff9eb; }
-    .moment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .moment-context p { font-size: 14px; line-height: 1.4; }
-    .moment-context span { display: block; color: #7d5a1f; font-size: 12px; font-weight: 900; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0; }
-    .advanced { border: 1px solid #e4dfd2; border-radius: 8px; background: #fffefa; }
-    .advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 900; padding: 10px 12px; }
-    .advanced-body { border-top: 1px solid #e4dfd2; display: grid; gap: 10px; padding: 12px; }
-    .check-row { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 800; }
-    .check-row input { width: auto; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    h1, h2, h3, h4, p { margin: 0; }
+    a { color: inherit; }
+
+    /* SHELL */
+    .shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+    .sidebar { background: var(--surface); border-right: 1px solid var(--line); padding: 18px 14px; display: flex; flex-direction: column; gap: 8px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; }
+    .brand-mark { width: 28px; height: 28px; border-radius: 6px; background: var(--ink); color: white; display: grid; place-items: center; font-weight: 700; font-size: 12px; letter-spacing: -0.02em; }
+    .brand-name { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; line-height: 1.1; }
+    .brand-name small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; margin-top: 2px; }
+    .nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+    .nav a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-weight: 500; font-size: 13.5px; }
+    .nav a:hover { background: var(--surface-soft); }
+    .nav a.active { background: #efefef; color: var(--ink); }
+    .nav-icon { display: inline-flex; opacity: 0.65; }
+    .nav a.active .nav-icon { opacity: 1; }
+    .nav-label { flex: 1; }
+    .nav-badge { background: var(--ink); color: white; font-size: 11px; padding: 1px 7px; border-radius: 999px; font-weight: 600; min-width: 20px; text-align: center; }
+    .sidebar-footer { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; }
+    .sidebar-footer form button { width: 100%; }
+    .mode-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; align-self: flex-start; }
+    .mode-chip.dry { background: var(--info-soft); color: var(--info); }
+    .mode-chip.live { background: var(--success-soft); color: var(--success); }
+    .mode-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    /* MAIN */
+    .main { padding: 0; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 28px; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 10; min-height: 56px; }
+    .breadcrumb { display: flex; align-items: baseline; gap: 8px; }
+    .breadcrumb h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+    .crumb-sub { color: var(--muted); font-size: 13px; }
+    .topbar-actions { display: flex; align-items: center; gap: 8px; }
+    .page { padding: 28px; max-width: 1240px; }
+    .page-head { margin-bottom: 24px; }
+    .page-head .eyebrow { color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+    .page-head h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+    .page-head p { color: var(--muted); font-size: 14px; margin-top: 8px; max-width: 720px; line-height: 1.55; }
+
+    /* CARDS */
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px; }
+    .card.compact { padding: 14px; }
+    .card-head { margin-bottom: 14px; }
+    .card-head .eyebrow { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+    .card-head h2 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+    .card-head h3 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+    .card-head p { color: var(--muted); font-size: 13px; margin-top: 4px; line-height: 1.45; }
+    .card-grid { display: grid; gap: 10px; }
+    .card-grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+    /* TYPOGRAPHY HELPERS */
+    .eyebrow { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .field-label { color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; display: block; }
+    .subtle { color: var(--muted); }
+
+    /* BUTTONS */
+    button, .btn { font: inherit; border: 1px solid var(--ink); background: var(--ink); color: white; height: 34px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; }
+    button:hover, .btn:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+    button.compact, .btn.compact { height: 30px; font-size: 12.5px; padding: 0 11px; }
+    button.secondary, .btn.secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
+    button.secondary:hover { background: var(--surface-soft); border-color: var(--line-strong); }
+    button.ghost { background: transparent; color: var(--muted); border-color: transparent; }
+    button.ghost:hover { background: var(--surface-soft); color: var(--ink); }
+    button.approve { background: var(--success); border-color: var(--success); color: white; }
+    button.approve:hover { background: #166534; border-color: #166534; }
+    button.publish { background: var(--info); border-color: var(--info); color: white; }
+    button.publish:hover { background: #1e40af; border-color: #1e40af; }
+    button.reject { background: var(--surface); color: var(--danger); border-color: #fecaca; }
+    button.reject:hover { background: var(--danger-soft); border-color: #fca5a5; }
+    button.delete { background: var(--surface); color: var(--danger); border-color: #fecaca; }
+    button.delete:hover { background: var(--danger-soft); border-color: #fca5a5; }
+    button.draft { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
+    button.draft:hover { background: var(--surface-soft); }
+    button.convert-to-post { background: var(--surface); color: var(--warning); border-color: #fde68a; }
+    button.manual-posted { background: var(--info); border-color: var(--info); color: white; }
+    button.manual-posted:hover { background: #1e40af; border-color: #1e40af; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* FORMS */
+    input, select, textarea { font: inherit; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 13.5px; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid #c7d2fe; border-color: #818cf8; }
+    textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
+    .row { display: grid; gap: 8px; }
+    .row.cols-2 { grid-template-columns: repeat(2, 1fr); }
+
+    /* PILLS / BADGES */
+    .pill { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--surface-soft); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
+    .pill.draft { background: #fafafa; color: var(--muted); }
+    .pill.approved { background: var(--success-soft); color: var(--success); border-color: #bbf7d0; }
+    .pill.published { background: var(--info-soft); color: var(--info); border-color: #bfdbfe; }
+    .pill.rejected { background: var(--danger-soft); color: var(--danger); border-color: #fecaca; }
+    .pill.failed { background: var(--warning-soft); color: var(--warning); border-color: #fde68a; }
+    .pill.type { background: #fafafa; color: var(--muted); }
+
+    /* TABS */
+    .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 20px; overflow-x: auto; flex-wrap: wrap; }
+    .tabs a { padding: 10px 14px; color: var(--muted); text-decoration: none; font-weight: 500; font-size: 13.5px; border-bottom: 2px solid transparent; margin-bottom: -1px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .tabs a:hover { color: var(--ink); }
+    .tabs a.active { color: var(--ink); border-color: var(--ink); }
+    .tabs .count { background: var(--surface-soft); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; min-width: 18px; height: 18px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+
+    /* METRICS */
+    .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .metric { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+    .metric .label { color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .metric .value { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; margin-top: 6px; }
+    .metric .delta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* ITEM */
+    .item { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 12px; position: relative; }
+    .item.approved { border-left: 3px solid var(--success); }
+    .item.published { border-left: 3px solid var(--info); }
+    .item.failed { border-left: 3px solid var(--warning); }
+    .item.rejected { border-left: 3px solid var(--danger); opacity: 0.85; }
+    .item-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 8px; flex-wrap: wrap; }
+    .item-head .meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .item-title { font-weight: 600; font-size: 14px; }
+    .action-hint { color: var(--muted); font-size: 13px; margin: 6px 0 12px; }
+    .chars { color: var(--muted); font-size: 12px; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    .alert { border-radius: 8px; padding: 10px 12px; font-size: 14px; line-height: 1.4; }
-    .error { color: #8d3029; background: #fff2ef; border: 1px solid #efc9c3; }
-    .success { color: #0f5d52; background: #eff8f4; border: 1px solid #cce7dd; }
-    .empty { color: var(--muted); padding: 26px 0; text-align: center; border: 1px dashed #d4cbbb; border-radius: 8px; background: rgba(255,253,250,.5); }
-    @media (max-width: 760px) {
-      .topbar, .mode-banner { align-items: stretch; flex-direction: column; }
-      .agent-panel, .integration-panel { grid-template-columns: 1fr; }
-      .board-head { align-items: stretch; flex-direction: column; }
-      .board-meta { justify-items: start; }
-      .board-grid { grid-template-columns: 1fr; }
-      .brand-row { align-items: flex-start; }
-      .top-actions { justify-content: space-between; }
-      .status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .section-head { align-items: stretch; flex-direction: column; }
-      .section-actions { justify-content: stretch; }
-      .row { grid-template-columns: 1fr; }
-      .moment-grid { grid-template-columns: 1fr; }
-      .item-head { flex-direction: column; }
-      button { width: 100%; }
-      .actions { display: grid; grid-template-columns: 1fr; }
+
+    /* CONTEXT */
+    .context { background: var(--surface-soft); border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin: 10px 0; }
+    .context.missing { background: var(--danger-soft); border-color: #fecaca; }
+    .context p { font-size: 13px; line-height: 1.5; }
+    .context p span { display: block; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+    .context blockquote { margin: 8px 0; padding-left: 10px; border-left: 2px solid var(--line-strong); color: var(--ink-soft); font-size: 13px; }
+    .context-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    @media (max-width: 700px) { .context-grid { grid-template-columns: 1fr; } }
+
+    /* ALERTS */
+    .alert { padding: 9px 12px; border-radius: 6px; font-size: 13px; margin: 8px 0; }
+    .alert.error { background: var(--danger-soft); color: var(--danger); border: 1px solid #fecaca; }
+    .alert.success { background: var(--success-soft); color: var(--success); border: 1px solid #bbf7d0; }
+    .alert.warning { background: var(--warning-soft); color: var(--warning); border: 1px solid #fde68a; }
+    .alert.info { background: var(--info-soft); color: var(--info); border: 1px solid #bfdbfe; }
+
+    /* DETAILS */
+    details.advanced, details.composer { background: var(--surface-soft); border: 1px solid var(--line); border-radius: 6px; }
+    details.advanced summary, details.composer summary { padding: 8px 12px; cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 500; list-style: none; }
+    details.advanced summary::-webkit-details-marker, details.composer summary::-webkit-details-marker { display: none; }
+    details.advanced summary::before, details.composer summary::before { content: "+ "; color: var(--muted); font-weight: 600; }
+    details.advanced[open] summary::before, details.composer[open] summary::before { content: "− "; }
+    .advanced-body, .composer-body { padding: 12px; display: grid; gap: 10px; border-top: 1px solid var(--line); }
+
+    /* EMPTY STATE */
+    .empty { text-align: center; padding: 40px 20px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--muted); background: var(--surface); font-size: 13.5px; }
+
+    /* COUNCIL */
+    .council-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .council-card h3 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+    .council-card .field { margin: 0 0 10px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); }
+    .council-card .field span { display: block; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+    .council-card .field a { color: var(--info); }
+    .council-card .list { margin: 12px 0; }
+    .council-card .list span { display: block; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+    .council-card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+    .council-card li { font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); }
+    .council-card li small { display: block; color: var(--muted); margin-top: 1px; font-size: 12px; }
+    .council-card .subcard { background: var(--surface-soft); border-radius: 6px; padding: 10px; margin-top: 8px; border: 1px solid var(--line); }
+    .council-card .subcard strong { display: block; font-size: 13px; margin-bottom: 6px; }
+    .council-experiment { border-left: 3px solid var(--info); }
+
+    /* HOJE */
+    .hoje-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+    .hoje-priority { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 28px; }
+    .hoje-priority .label { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 10px; }
+    .hoje-priority h2 { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 14px; }
+    .hoje-priority p { font-size: 14px; color: var(--ink-soft); line-height: 1.55; }
+    .hoje-side { display: grid; gap: 12px; }
+    .queue-summary { display: grid; gap: 6px; }
+    .queue-summary a { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-decoration: none; font-size: 13.5px; }
+    .queue-summary a:hover { border-color: var(--line-strong); background: var(--surface-soft); }
+    .queue-summary .count { background: var(--ink); color: white; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+
+    /* LOGIN */
+    .login { min-height: 100vh; display: grid; place-items: center; background: var(--bg); }
+    .login-panel { width: min(420px, calc(100vw - 32px)); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 28px; }
+    .login-panel form { display: grid; gap: 12px; margin-top: 14px; }
+    .login-panel button { width: 100%; }
+
+    /* RESPONSIVE */
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; flex-direction: column; padding: 12px; }
+      .topbar { padding: 12px 16px; }
+      .page { padding: 16px; }
+      .metric-grid { grid-template-columns: repeat(2, 1fr); }
+      .council-grid { grid-template-columns: 1fr; }
+      .hoje-grid { grid-template-columns: 1fr; }
+      .card-grid.cols-2, .card-grid.cols-3, .card-grid.cols-4 { grid-template-columns: 1fr; }
     }
   </style>
 </head>`;
 }
 
 function escapeHtml(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")

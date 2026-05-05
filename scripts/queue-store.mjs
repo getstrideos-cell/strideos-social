@@ -59,6 +59,8 @@ export function createQueueItem(input) {
     requiresManualPublish: Boolean(input.requiresManualPublish),
     text: input.text || "",
     source: input.source || "manual",
+    rejectionReason: input.rejectionReason || undefined,
+    rejectedAt: input.rejectedAt || undefined,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
