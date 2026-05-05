@@ -34,6 +34,12 @@ services:
         value: SaaS,startups,Entrepreneur,SideProject,indiehackers
       - key: REDDIT_SEARCH_QUERIES
         value: solo founder,build in public,SaaS metrics,AI agents startup,distribution
+      - key: REPLY_MAX_AGE_HOURS
+        value: "36"
+      - key: X_SIGNAL_MAX_AGE_HOURS
+        value: "96"
+      - key: AGENT_MEMORY_LOOKBACK_DAYS
+        value: "45"
       - key: PLAUSIBLE_API_KEY
         sync: false
       - key: PLAUSIBLE_SITE_ID

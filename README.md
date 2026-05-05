@@ -103,6 +103,9 @@ The Founder Board uses every source that is configured, then falls back graceful
 TARGET_X_HANDLES=gregisenberg,noahkagan,george__mack,buildinpublic,openai,perplexity_ai,AnthropicAI
 REDDIT_SUBREDDITS=SaaS,startups,Entrepreneur,SideProject,indiehackers
 REDDIT_SEARCH_QUERIES=solo founder,build in public,SaaS metrics,AI agents startup,distribution
+REPLY_MAX_AGE_HOURS=36
+X_SIGNAL_MAX_AGE_HOURS=96
+AGENT_MEMORY_LOOKBACK_DAYS=45
 PLAUSIBLE_API_KEY=your_plausible_stats_api_key
 PLAUSIBLE_SITE_ID=getstrideos.com
 POSTHOG_PERSONAL_API_KEY=your_posthog_personal_api_key
@@ -118,6 +121,12 @@ Connected sources:
 - Plausible or PostHog: reads landing/product analytics when keys are configured.
 - Google Analytics: connect through OAuth from the dashboard and read GA4 landing analytics.
 - Internal feedback: uses approvals, rejections, failures, published queue history, and manual suggestions.
+
+Anti-repetition controls:
+
+- `REPLY_MAX_AGE_HOURS`: only suggest replies to fresh X posts. Default: 36 hours.
+- `X_SIGNAL_MAX_AGE_HOURS`: ignore old X posts for market/reply sourcing. Default: 96 hours.
+- `AGENT_MEMORY_LOOKBACK_DAYS`: avoid reusing reply targets, URLs, and near-duplicate post text from recent queue history, including items marked as manually posted. Default: 45 days.
 
 Google Analytics OAuth:
 

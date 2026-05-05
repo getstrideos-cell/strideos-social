@@ -15,6 +15,9 @@ const growthMinute = Number(process.env.GROWTH_PACK_MINUTE || 0);
 const momentHour = Number(process.env.FOUNDER_MOMENT_HOUR || 10);
 const momentMinute = Number(process.env.FOUNDER_MOMENT_MINUTE || 30);
 const schedulerIntervalMs = Number(process.env.AGENT_SCHEDULER_INTERVAL_MS || 60_000);
+const replyMaxAgeHours = Number(process.env.REPLY_MAX_AGE_HOURS || 36);
+const xSignalMaxAgeHours = Number(process.env.X_SIGNAL_MAX_AGE_HOURS || 96);
+const memoryLookbackDays = Number(process.env.AGENT_MEMORY_LOOKBACK_DAYS || 45);
 const targetHandles = (process.env.TARGET_X_HANDLES || "gregisenberg,noahkagan,george__mack,buildinpublic,openai,perplexity_ai,AnthropicAI")
   .split(",")
   .map((handle) => handle.trim().replace(/^@/, ""))
@@ -83,10 +86,12 @@ export async function generateDailyGrowthPack({ force = false, reason = "manual"
     return { agent: "growth-pack", status: "skipped", date: today, reason: "already-created" };
   }
 
+  const queue = await readQueue();
+  const memory = buildAgentMemory(queue, now);
   const board = await ensureFounderBoard(today, now);
   const signals = board?.signals || (await collectTrendSignals());
-  const rawItems = buildGrowthPackItems(today, signals, board);
-  const enhancedItems = await enhanceGrowthPackWithOpenAI(rawItems, board, signals);
+  const rawItems = selectNovelItems(buildGrowthPackItems(today, signals, board, memory), memory, 5);
+  const enhancedItems = selectNovelItems(await enhanceGrowthPackWithOpenAI(rawItems, board, signals, memory), memory, 5);
   const items = enhancedItems.map((item) =>
     createQueueItem({
       ...item,
@@ -338,7 +343,7 @@ async function enhanceFounderBoardWithOpenAI(board) {
   }
 }
 
-async function enhanceGrowthPackWithOpenAI(items, board, signals) {
+async function enhanceGrowthPackWithOpenAI(items, board, signals, memory = emptyAgentMemory()) {
   if (!hasOpenAI()) return items;
 
   try {
@@ -355,6 +360,8 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals) {
         "A saída deve conter exatamente cinco itens.",
         "Inclua pelo menos um item community-post.",
         "Mantenha itens reply apenas se eles tiverem um replyToPostId real vindo do input.",
+        `Não sugira replies para posts com mais de ${replyMaxAgeHours} horas.`,
+        "Não repita nenhum texto, post-alvo, sourceUrl ou ângulo já existente na memória fornecida.",
         "Não finja que o Stride OS está totalmente lançado. Atualmente tem só uma landing page e o projeto em desenvolvimento.",
         "Sem hashtags a não ser que sejam genuinamente necessárias. Sem hype com cara de IA. Sem métricas falsas."
       ].join("\n"),
@@ -368,6 +375,7 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals) {
           growthExperiment: board?.growthExperiment
         },
         signals: compactSignals(signals).slice(0, 8),
+        avoid: compactAgentMemory(memory),
         draftItems: items
       })
     });
@@ -437,14 +445,18 @@ function buildIntegrationStatus(signals) {
   ];
 }
 
-function buildGrowthPackItems(today, signals) {
+function buildGrowthPackItems(today, signals, board, memory = emptyAgentMemory()) {
   const xSignals = signals.filter((signal) => signal.kind === "x-post");
   const primarySignal = signals[0] || { label: "agentes de IA estão deixando fundadores solo mais rápidos", source: "fallback" };
   const communitySignal =
     signals.find((signal) => signal.kind === "community") ||
     signals[1] ||
     { label: "build-in-public funciona melhor quando os updates estão ancorados em progresso real", source: "fallback" };
-  const replyTargets = xSignals.filter((signal) => signal.replyToPostId && signal.replySettings === "everyone").slice(0, 2);
+  const replyTargets = xSignals
+    .filter((signal) => signal.replyToPostId && signal.replySettings === "everyone" && signal.isFreshForReply)
+    .filter((signal) => !memory.replyToPostIds.has(String(signal.replyToPostId)))
+    .filter((signal) => !memory.sourceUrls.has(String(signal.targetPostUrl || signal.url || "").toLowerCase()))
+    .slice(0, 2);
 
   const items = [
     {
@@ -505,11 +517,11 @@ function buildGrowthPackItems(today, signals) {
     });
   }
 
-  while (items.length < 5) {
+  while (items.length < 9) {
     items.push(nextProfilePost(items.length, communitySignal));
   }
 
-  return items.slice(0, 5).map((item) => ({ ...item, generatedForDate: today }));
+  return items.map((item) => ({ ...item, generatedForDate: today }));
 }
 
 async function collectTrendSignals() {
@@ -569,8 +581,10 @@ async function collectXSignals() {
       for (const tweet of tweets?.data || []) {
         const metrics = tweet.public_metrics || {};
         const text = normalizeTweetText(tweet.text || "");
+        const ageHours = getAgeHours(tweet.created_at);
         const relevant = isRelevantTweet(text);
         if (!relevant) continue;
+        if (ageHours !== null && ageHours > xSignalMaxAgeHours) continue;
 
         const handleWithAt = `@${handle}`;
         const score =
@@ -591,6 +605,9 @@ async function collectXSignals() {
           targetPostText: text,
           targetPostSummary: summarizeTweet(text),
           replySettings: tweet.reply_settings || "unknown",
+          createdAt: tweet.created_at || "",
+          ageHours,
+          isFreshForReply: ageHours !== null && ageHours <= replyMaxAgeHours,
           metrics,
           score
         });
@@ -1157,6 +1174,37 @@ function nextProfilePost(index, communitySignal) {
       sourceUrl: communitySignal.url,
       trendSignal: communitySignal.label,
       text: trimPost(`Build in public gets weird when it becomes performance.\n\nThe useful version is quieter:\n\nwhat changed\nwhat you tried\nwhat the numbers said\nwhat you are doing next\n\nThat is the story I want Stride OS to help founders tell.`)
+    },
+    {
+      viralThesis: "Contraste entre ferramenta e ritual ajuda a posicionar o Stride OS como sistema operacional do fundador, não só app de conteúdo.",
+      evidence: "O Founder Board já cruza sinais de X, analytics, comunidade e fila interna antes de sugerir uma ação.",
+      trendSignal: "Founders estão buscando sistemas, não mais uma lista de tarefas de conteúdo.",
+      text: trimPost(`I keep noticing the same founder problem:\n\nshipping creates facts\nbut posting needs a story\n\nStride OS is becoming the layer between those two things.\n\nNot a content calendar.\nA weekly operating ritual.`)
+    },
+    {
+      viralThesis: "Post de bastidor sobre o produto incompleto aumenta confiança e reduz a sensação de marketing prematuro.",
+      evidence: "A landing está no ar, mas o produto principal ainda está sendo construído; esse é o estágio honesto mais forte para narrativa.",
+      trendSignal: "Proof-of-work em estágio inicial tende a gerar conversas melhores que anúncio polido.",
+      text: trimPost(`The product is not polished yet.\n\nThat is exactly why I want to build in public properly.\n\nIf Stride OS works, it should help me turn messy weekly progress into a clear update before the product feels launch-ready.`)
+    },
+    {
+      viralThesis: "Pergunta operacional convida replies de fundadores e coleta pesquisa de mercado sem parecer pitch.",
+      evidence: evidenceFor(communitySignal),
+      sourceUrl: communitySignal.url,
+      trendSignal: communitySignal.label,
+      text: trimPost(`Curious how other solo founders do this:\n\nwhen a week is messy, what do you post?\n\nThe shipped thing?\nThe lesson?\nThe metric?\nThe honest blocker?\n\nI am building around this problem and the answer is less obvious than I expected.`)
+    },
+    {
+      viralThesis: "Nomeia uma dor concreta: consistência sem parecer máquina de conteúdo.",
+      evidence: "A fila interna mistura posts, replies, comunidade e founder moments; a dor é decidir o que vale publicar, não apenas gerar texto.",
+      trendSignal: "A distribuição de fundador está migrando de volume para qualidade de sinal.",
+      text: trimPost(`The hard part of building in public is not writing one update.\n\nIt is staying consistent without becoming a content machine.\n\nThat is the line I am trying to design Stride OS around.`)
+    },
+    {
+      viralThesis: "Mostra o produto como conselho de diretores de IA, um ângulo mais memorável que gerador de tweets.",
+      evidence: "O Stride OS já tem Radar de Mercado, Diretor de Marketing, Diretor de Produto e Growth Experiment alimentando drafts.",
+      trendSignal: "AI agents are moving from one-off prompts to operating systems for solo founders.",
+      text: trimPost(`The more I build Stride OS, the less I think of it as a posting tool.\n\nIt is closer to a tiny operating team:\n\nmarket radar\nmarketing director\nproduct director\ncontent agents\n\nAll pointing at one question: what should the founder do next?`)
     }
   ];
   return {
@@ -1164,6 +1212,152 @@ function nextProfilePost(index, communitySignal) {
     recommendedSurface: "Perfil Stride OS",
     ...posts[index % posts.length]
   };
+}
+
+function buildAgentMemory(queue, now = new Date()) {
+  const memory = emptyAgentMemory();
+  const cutoff = now.getTime() - memoryLookbackDays * 24 * 60 * 60 * 1000;
+
+  for (const item of queue.items || []) {
+    const timestamp = new Date(item.updatedAt || item.createdAt || item.manualPublishedAt || 0).getTime();
+    if (Number.isFinite(timestamp) && timestamp > 0 && timestamp < cutoff) continue;
+
+    rememberItem(item, memory);
+  }
+
+  return memory;
+}
+
+function emptyAgentMemory() {
+  return {
+    replyToPostIds: new Set(),
+    sourceUrls: new Set(),
+    textFingerprints: new Set(),
+    ideaFingerprints: new Set(),
+    publicTexts: []
+  };
+}
+
+function selectNovelItems(items, memory, limit) {
+  const selected = [];
+  const localMemory = cloneAgentMemory(memory);
+
+  for (const item of items) {
+    if (selected.length >= limit) break;
+    if (isDuplicateItem(item, localMemory)) continue;
+    selected.push(item);
+    rememberItem(item, localMemory);
+  }
+
+  return selected;
+}
+
+function isDuplicateItem(item, memory) {
+  if (item.replyToPostId && memory.replyToPostIds.has(String(item.replyToPostId))) return true;
+
+  const url = String(item.sourceUrl || item.targetPostUrl || "").toLowerCase();
+  if (url && memory.sourceUrls.has(url)) return true;
+
+  if (item.text) {
+    const fingerprint = fingerprintText(item.text);
+    if (memory.textFingerprints.has(fingerprint)) return true;
+    if (memory.publicTexts.some((text) => textSimilarity(text, item.text) >= 0.68)) return true;
+  }
+
+  const ideaText = [item.viralThesis, item.trendSignal].filter(Boolean).join(" ");
+  if (ideaText && memory.ideaFingerprints.has(fingerprintText(ideaText))) return true;
+
+  return false;
+}
+
+function rememberItem(item, memory) {
+  if (item.replyToPostId) memory.replyToPostIds.add(String(item.replyToPostId));
+
+  for (const url of [item.sourceUrl, item.targetPostUrl]) {
+    if (url) memory.sourceUrls.add(String(url).toLowerCase());
+  }
+
+  if (item.text) {
+    memory.textFingerprints.add(fingerprintText(item.text));
+    memory.publicTexts.push(item.text);
+  }
+
+  const ideaText = [item.viralThesis, item.trendSignal].filter(Boolean).join(" ");
+  if (ideaText) memory.ideaFingerprints.add(fingerprintText(ideaText));
+}
+
+function cloneAgentMemory(memory) {
+  return {
+    replyToPostIds: new Set(memory.replyToPostIds),
+    sourceUrls: new Set(memory.sourceUrls),
+    textFingerprints: new Set(memory.textFingerprints),
+    ideaFingerprints: new Set(memory.ideaFingerprints),
+    publicTexts: [...memory.publicTexts]
+  };
+}
+
+function compactAgentMemory(memory) {
+  return {
+    usedReplyToPostIds: [...memory.replyToPostIds].slice(-50),
+    usedSourceUrls: [...memory.sourceUrls].slice(-50),
+    recentPublicTexts: memory.publicTexts.slice(-20)
+  };
+}
+
+function fingerprintText(text) {
+  return meaningfulWords(text).slice(0, 22).join(" ");
+}
+
+function textSimilarity(left, right) {
+  const leftWords = new Set(meaningfulWords(left));
+  const rightWords = new Set(meaningfulWords(right));
+  if (leftWords.size === 0 || rightWords.size === 0) return 0;
+
+  const intersection = [...leftWords].filter((word) => rightWords.has(word)).length;
+  const union = new Set([...leftWords, ...rightWords]).size;
+  return intersection / union;
+}
+
+function meaningfulWords(text) {
+  const stopwords = new Set([
+    "the",
+    "and",
+    "that",
+    "this",
+    "with",
+    "from",
+    "para",
+    "como",
+    "uma",
+    "que",
+    "por",
+    "com",
+    "mais",
+    "when",
+    "what",
+    "your",
+    "you",
+    "are",
+    "not",
+    "still",
+    "founder",
+    "founders",
+    "stride",
+    "strideos"
+  ]);
+  return String(text)
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !stopwords.has(word));
+}
+
+function getAgeHours(value) {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  return (Date.now() - timestamp) / (60 * 60 * 1000);
 }
 
 async function writeAgentState(state) {
