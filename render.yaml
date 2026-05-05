@@ -22,6 +22,26 @@ services:
         generateValue: true
       - key: X_USER_ACCESS_TOKEN
         sync: false
+      - key: X_REFRESH_TOKEN
+        sync: false
+      - key: X_CLIENT_ID
+        sync: false
+      - key: X_CLIENT_SECRET
+        sync: false
+      - key: TARGET_X_HANDLES
+        value: gregisenberg,noahkagan,george__mack,buildinpublic,openai,perplexity_ai,AnthropicAI
+      - key: REDDIT_SUBREDDITS
+        value: SaaS,startups,Entrepreneur,SideProject,indiehackers
+      - key: REDDIT_SEARCH_QUERIES
+        value: solo founder,build in public,SaaS metrics,AI agents startup,distribution
+      - key: PLAUSIBLE_API_KEY
+        sync: false
+      - key: PLAUSIBLE_SITE_ID
+        sync: false
+      - key: POSTHOG_PERSONAL_API_KEY
+        sync: false
+      - key: POSTHOG_PROJECT_ID
+        sync: false
     disk:
       name: strideos-social-data
       mountPath: /var/data

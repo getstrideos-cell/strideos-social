@@ -603,6 +603,7 @@ function renderFounderBoard(board) {
       </div>
     </div>
     <div class="board-grid">
+      ${renderIntegrations(board.integrations)}
       ${renderBoardCard(board.marketRadar)}
       ${renderBoardCard(board.marketingDirector)}
       ${renderBoardCard(board.productDirector)}
@@ -610,6 +611,24 @@ function renderFounderBoard(board) {
       ${renderGrowthExperiment(board.growthExperiment)}
     </div>
   </section>`;
+}
+
+function renderIntegrations(integrations = []) {
+  if (!Array.isArray(integrations) || integrations.length === 0) return "";
+  return `<article class="board-card integrations-card">
+    <h3>Connected Sources</h3>
+    <div class="integration-list">
+      ${integrations
+        .map(
+          (integration) => `<p>
+            <span>${escapeHtml(integration.name || "")}</span>
+            <strong>${escapeHtml(integration.status || "")}</strong>
+            <small>${escapeHtml(integration.detail || "")}</small>
+          </p>`
+        )
+        .join("")}
+    </div>
+  </article>`;
 }
 
 function renderBoardCard(card = {}) {
@@ -1002,6 +1021,11 @@ function renderHead(title) {
     .board-subcard { border-top: 1px solid #e4dfd2; padding-top: 10px; margin-top: 10px; }
     .board-subcard strong { display: block; font-size: 14px; margin-bottom: 7px; }
     .growth-experiment { border-color: #c7d6d0; background: #f8fcfa; }
+    .integrations-card { background: #fffefa; }
+    .integration-list { display: grid; gap: 9px; }
+    .integration-list p { border: 1px solid #e4dfd2; border-radius: 8px; padding: 10px; margin: 0; background: #fffdfa; }
+    .integration-list strong { display: inline-flex; min-height: 22px; align-items: center; border-radius: 999px; background: #e7eee9; color: #36554d; padding: 0 8px; font-size: 12px; text-transform: uppercase; }
+    .integration-list small { display: block; color: var(--muted); margin-top: 5px; line-height: 1.35; }
     .empty-board { border: 1px dashed #d4cbbb; border-radius: 8px; padding: 16px; background: rgba(255,253,250,.55); }
     .composer { padding: 0; overflow: hidden; }
     .composer summary { cursor: pointer; padding: 14px 16px; font-weight: 800; }

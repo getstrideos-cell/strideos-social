@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { createQueueItem, queuePath, updateQueue } from "./queue-store.mjs";
+import { createQueueItem, queuePath, readQueue, updateQueue } from "./queue-store.mjs";
 import { refreshXAccessToken, XApiError } from "./x-client.mjs";
 import { readXTokenState, writeXTokenState } from "./x-token-store.mjs";
 
@@ -17,6 +17,20 @@ const targetHandles = (process.env.TARGET_X_HANDLES || "gregisenberg,noahkagan,g
   .split(",")
   .map((handle) => handle.trim().replace(/^@/, ""))
   .filter(Boolean);
+const redditSubreddits = (process.env.REDDIT_SUBREDDITS || "SaaS,startups,Entrepreneur,SideProject,indiehackers")
+  .split(",")
+  .map((subreddit) => subreddit.trim().replace(/^r\//, ""))
+  .filter(Boolean);
+const redditQueries = (process.env.REDDIT_SEARCH_QUERIES || "solo founder,build in public,SaaS metrics,AI agents startup,distribution")
+  .split(",")
+  .map((query) => query.trim())
+  .filter(Boolean);
+const plausibleApiKey = process.env.PLAUSIBLE_API_KEY || "";
+const plausibleSiteId = process.env.PLAUSIBLE_SITE_ID || "";
+const plausibleHost = process.env.PLAUSIBLE_HOST || "https://plausible.io";
+const posthogApiKey = process.env.POSTHOG_PERSONAL_API_KEY || "";
+const posthogProjectId = process.env.POSTHOG_PROJECT_ID || "";
+const posthogHost = (process.env.POSTHOG_HOST || "https://us.posthog.com").replace(/\/$/, "");
 
 let schedulerStarted = false;
 let schedulerRunning = false;
@@ -194,6 +208,7 @@ function buildFounderBoard(today, signals, now, reason) {
     createdAt: now.toISOString(),
     stage: "Landing page live. Core Stride OS product still in development. Social agent and approval workflow are the first working wedge.",
     signals,
+    integrations: buildIntegrationStatus(signals),
     marketRadar: {
       title: "Market Radar",
       summary: "Solo founders are paying attention to AI leverage, distribution, and proof-of-work. The opportunity is to position Stride OS as the operating rhythm that turns real progress into public narrative.",
@@ -259,6 +274,37 @@ function buildFounderBoard(today, signals, now, reason) {
       successMetric: "At least one qualified founder reply, DM, or landing click."
     }
   };
+}
+
+function buildIntegrationStatus(signals) {
+  const sources = new Set(signals.map((signal) => signal.source).filter(Boolean));
+  return [
+    {
+      name: "X market radar",
+      status: sources.has("x") ? "connected" : "not enough signal",
+      detail: "Reads recent posts from target accounts when X API read access is available."
+    },
+    {
+      name: "X performance",
+      status: sources.has("x-performance") ? "connected" : "waiting",
+      detail: "Learns from your published posts once they have X metrics."
+    },
+    {
+      name: "Landing analytics",
+      status: sources.has("plausible") || sources.has("posthog") ? "connected" : "needs key",
+      detail: "Uses Plausible or PostHog when API keys are configured."
+    },
+    {
+      name: "Reddit/community radar",
+      status: sources.has("reddit") ? "connected" : "limited",
+      detail: `Watches r/${redditSubreddits.slice(0, 3).join(", r/")} and related founder searches.`
+    },
+    {
+      name: "Internal feedback",
+      status: sources.has("strideos") ? "connected" : "waiting",
+      detail: "Uses approvals, rejections, failures, manual suggestions, and published queue history."
+    }
+  ];
 }
 
 function buildGrowthPackItems(today, signals) {
@@ -346,6 +392,11 @@ async function collectTrendSignals() {
   const signals = [];
 
   signals.push(...(await collectXSignals()));
+  signals.push(...(await collectXPerformanceSignals()));
+  signals.push(...(await collectPlausibleSignals()));
+  signals.push(...(await collectPostHogSignals()));
+  signals.push(...(await collectRedditSignals()));
+  signals.push(...(await collectInternalFeedbackSignals()));
 
   for (const query of queries) {
     try {
@@ -361,7 +412,7 @@ async function collectTrendSignals() {
     }
   }
 
-  return signals.length > 0 ? signals.slice(0, 6) : fallback;
+  return dedupeSignals(signals).length > 0 ? dedupeSignals(signals).slice(0, 12) : fallback;
 }
 
 async function collectXSignals() {
@@ -421,6 +472,223 @@ async function collectXSignals() {
   return signals.sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4);
 }
 
+async function collectXPerformanceSignals() {
+  const tokenState = await getFreshXTokenState();
+  if (!tokenState.accessToken) return [];
+
+  let queue;
+  try {
+    queue = await readQueue();
+  } catch {
+    return [];
+  }
+
+  const ids = queue.items
+    .filter((item) => item.status === "published" && item.xPostId)
+    .slice(0, 25)
+    .map((item) => item.xPostId);
+  if (ids.length === 0) return [];
+
+  try {
+    const tweets = await xFetchJson(
+      `https://api.x.com/2/tweets?ids=${encodeURIComponent(ids.join(","))}&tweet.fields=created_at,public_metrics,text`,
+      tokenState
+    );
+    return (tweets.data || [])
+      .map((tweet) => {
+        const metrics = tweet.public_metrics || {};
+        const score =
+          Number(metrics.like_count || 0) +
+          Number(metrics.reply_count || 0) * 4 +
+          Number(metrics.retweet_count || 0) * 3 +
+          Number(metrics.quote_count || 0) * 3;
+        return {
+          kind: "performance",
+          source: "x-performance",
+          label: `Published post performance: ${normalizeTweetText(tweet.text || "").slice(0, 120)}`,
+          url: `https://x.com/i/web/status/${tweet.id}`,
+          metrics,
+          score
+        };
+      })
+      .filter((signal) => signal.score > 0)
+      .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+      .slice(0, 3);
+  } catch (error) {
+    console.warn("Could not collect X performance signals:", error.message);
+    return [];
+  }
+}
+
+async function collectPlausibleSignals() {
+  if (!plausibleApiKey || !plausibleSiteId) return [];
+
+  try {
+    const overview = await plausibleQuery({
+      site_id: plausibleSiteId,
+      metrics: ["visitors", "pageviews", "visits", "bounce_rate"],
+      date_range: "7d"
+    });
+    const sources = await plausibleQuery({
+      site_id: plausibleSiteId,
+      metrics: ["visitors"],
+      dimensions: ["visit:source"],
+      date_range: "7d",
+      order_by: [["visitors", "desc"]],
+      pagination: { limit: 5, offset: 0 }
+    });
+
+    const overviewRow = overview.results?.[0]?.metrics || [];
+    const topSource = sources.results?.[0];
+    const visitors = Number(overviewRow[0] || 0);
+    const pageviews = Number(overviewRow[1] || 0);
+    const topSourceName = topSource?.dimensions?.[0] || "";
+    const topSourceVisitors = Number(topSource?.metrics?.[0] || 0);
+
+    return [
+      {
+        kind: "landing-analytics",
+        source: "plausible",
+        label: `Landing analytics: ${visitors} visitors and ${pageviews} pageviews in the last 7 days${topSourceName ? `; top source ${topSourceName} with ${topSourceVisitors} visitors` : ""}`,
+        metrics: { visitors, pageviews, topSourceVisitors },
+        score: visitors + topSourceVisitors * 2
+      }
+    ];
+  } catch (error) {
+    console.warn("Could not collect Plausible signals:", error.message);
+    return [];
+  }
+}
+
+async function plausibleQuery(body) {
+  const response = await fetch(`${plausibleHost.replace(/\/$/, "")}/api/v2/query`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${plausibleApiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Plausible returned ${response.status}: ${JSON.stringify(json).slice(0, 240)}`);
+  return json;
+}
+
+async function collectPostHogSignals() {
+  if (!posthogApiKey || !posthogProjectId) return [];
+
+  try {
+    const events = await posthogQuery(
+      "SELECT event, count() AS event_count FROM events WHERE timestamp > now() - INTERVAL 7 DAY GROUP BY event ORDER BY event_count DESC LIMIT 5"
+    );
+    const urls = await posthogQuery(
+      "SELECT properties.$current_url AS url, count() AS views FROM events WHERE timestamp > now() - INTERVAL 7 DAY AND event = '$pageview' GROUP BY url ORDER BY views DESC LIMIT 5"
+    );
+
+    const topEvent = events.results?.[0] || [];
+    const topUrl = urls.results?.[0] || [];
+    const topEventName = topEvent[0] || "";
+    const topEventCount = Number(topEvent[1] || 0);
+    const topUrlValue = topUrl[0] || "";
+    const topUrlViews = Number(topUrl[1] || 0);
+
+    return [
+      {
+        kind: "product-analytics",
+        source: "posthog",
+        label: `Product/landing analytics: top event ${topEventName || "unknown"} (${topEventCount}); top page ${topUrlValue || "unknown"} (${topUrlViews} views)`,
+        url: topUrlValue,
+        metrics: { topEventCount, topUrlViews },
+        score: topEventCount + topUrlViews
+      }
+    ];
+  } catch (error) {
+    console.warn("Could not collect PostHog signals:", error.message);
+    return [];
+  }
+}
+
+async function posthogQuery(query) {
+  const response = await fetch(`${posthogHost}/api/projects/${encodeURIComponent(posthogProjectId)}/query/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${posthogApiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    },
+    body: JSON.stringify({ query: { kind: "HogQLQuery", query } })
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`PostHog returned ${response.status}: ${JSON.stringify(json).slice(0, 240)}`);
+  return json;
+}
+
+async function collectRedditSignals() {
+  const signals = [];
+  let loggedFailure = false;
+
+  for (const subreddit of redditSubreddits.slice(0, 6)) {
+    for (const query of redditQueries.slice(0, 3)) {
+      try {
+        const url = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&sort=hot&t=week&limit=5&raw_json=1`;
+        const response = await fetch(url, {
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "StrideOSSocial/0.1 by getstrideos"
+          }
+        });
+        if (!response.ok) continue;
+        const json = await response.json();
+        for (const child of json.data?.children || []) {
+          const post = child.data || {};
+          const text = normalizeTweetText(`${post.title || ""} ${post.selftext || ""}`);
+          if (!isRelevantTweet(text)) continue;
+          const score = Number(post.score || 0) + Number(post.num_comments || 0) * 3;
+          signals.push({
+            kind: "reddit",
+            source: "reddit",
+            label: `r/${subreddit}: ${post.title || text.slice(0, 120)}`,
+            url: post.permalink ? `https://www.reddit.com${post.permalink}` : "",
+            metrics: { score: post.score || 0, comments: post.num_comments || 0 },
+            score
+          });
+        }
+      } catch (error) {
+        if (!loggedFailure) {
+          console.warn("Could not collect Reddit signals:", error.message);
+          loggedFailure = true;
+        }
+      }
+    }
+  }
+
+  return signals.sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 5);
+}
+
+async function collectInternalFeedbackSignals() {
+  try {
+    const queue = await readQueue();
+    const rejected = queue.items.filter((item) => item.status === "rejected").length;
+    const failed = queue.items.filter((item) => item.status === "failed").length;
+    const published = queue.items.filter((item) => item.status === "published").length;
+    const approved = queue.items.filter((item) => item.status === "approved").length;
+    const manual = queue.items.filter((item) => item.requiresManualAsset || item.requiresManualPublish).length;
+
+    return [
+      {
+        kind: "internal-feedback",
+        source: "strideos",
+        label: `Internal queue: ${published} published, ${approved} approved, ${rejected} rejected, ${failed} failed, ${manual} manual suggestions`,
+        metrics: { published, approved, rejected, failed, manual },
+        score: published + rejected + manual
+      }
+    ];
+  } catch {
+    return [];
+  }
+}
+
 async function getFreshXTokenState() {
   const tokenState = await readXTokenState();
   if (!tokenState.accessToken) return tokenState;
@@ -470,8 +738,31 @@ function evidenceFor(signal) {
       .join(", ");
     return `${signal.targetHandle || "X"} post about a relevant founder/AI/build-in-public topic${metricText ? ` with ${metricText}` : ""}.`;
   }
+  if (signal.source === "x-performance") {
+    const metrics = signal.metrics || {};
+    return `Your own published post had ${metrics.like_count || 0} likes, ${metrics.reply_count || 0} replies, ${metrics.retweet_count || 0} reposts, and ${metrics.quote_count || 0} quotes.`;
+  }
+  if (signal.source === "plausible") return signal.label;
+  if (signal.source === "posthog") return signal.label;
+  if (signal.source === "reddit") {
+    const metrics = signal.metrics || {};
+    return `Reddit discussion with ${metrics.score || 0} upvotes and ${metrics.comments || 0} comments.`;
+  }
+  if (signal.source === "strideos") return signal.label;
   if (signal.source === "hn") return `Recent Hacker News signal: ${signal.label}.`;
   return `Strategic fit with Stride OS: ${signal.label}.`;
+}
+
+function dedupeSignals(signals) {
+  const seen = new Set();
+  const unique = [];
+  for (const signal of signals) {
+    const key = `${signal.source || ""}:${signal.url || signal.label || ""}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(signal);
+  }
+  return unique.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
 }
 
 function replyTextFor(signal) {

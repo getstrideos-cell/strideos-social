@@ -76,21 +76,47 @@ From the dashboard you can add drafts, edit text, approve, reject, and publish a
 
 The hosted service can generate drafts by itself without the Codex desktop automation or your notebook.
 
+- Founder board: runs around 08:30 America/Sao_Paulo and creates the daily strategy memo.
 - Daily growth pack: runs around 09:00 America/Sao_Paulo and creates 5 text drafts.
 - Founder moment: runs around 10:30 America/Sao_Paulo and creates 1 manual image/photo suggestion.
-- Both write directly to the Render queue file, so they do not need to call the public dashboard API.
-- The dashboard also has manual buttons to run either generator immediately.
+- These agents write directly to the Render queue/state files, so they do not need to call the public dashboard API.
+- The dashboard also has manual buttons to run each generator immediately.
 
 Optional controls:
 
 ```bash
 RENDER_AGENTS_ENABLED=false
+FOUNDER_BOARD_HOUR=8
+FOUNDER_BOARD_MINUTE=30
 GROWTH_PACK_HOUR=9
 GROWTH_PACK_MINUTE=0
 FOUNDER_MOMENT_HOUR=10
 FOUNDER_MOMENT_MINUTE=30
 AGENT_TIMEZONE=America/Sao_Paulo
 ```
+
+## Founder Board Sources
+
+The Founder Board uses every source that is configured, then falls back gracefully when a source is missing.
+
+```bash
+TARGET_X_HANDLES=gregisenberg,noahkagan,george__mack,buildinpublic,openai,perplexity_ai,AnthropicAI
+REDDIT_SUBREDDITS=SaaS,startups,Entrepreneur,SideProject,indiehackers
+REDDIT_SEARCH_QUERIES=solo founder,build in public,SaaS metrics,AI agents startup,distribution
+PLAUSIBLE_API_KEY=your_plausible_stats_api_key
+PLAUSIBLE_SITE_ID=getstrideos.com
+POSTHOG_PERSONAL_API_KEY=your_posthog_personal_api_key
+POSTHOG_PROJECT_ID=your_posthog_project_id
+POSTHOG_HOST=https://us.posthog.com
+```
+
+Connected sources:
+
+- X market radar: reads target accounts for founder, AI, SaaS, distribution, and build-in-public signals.
+- X performance: learns from published posts that have an `xPostId` in the queue.
+- Reddit/community radar: reads public subreddit search results.
+- Plausible or PostHog: reads landing/product analytics when keys are configured.
+- Internal feedback: uses approvals, rejections, failures, published queue history, and manual suggestions.
 
 ## Commands
 
@@ -127,6 +153,7 @@ DRY_RUN=false npm run publish:x
 Generate local drafts manually:
 
 ```bash
+npm run generate:board
 npm run generate:growth
 npm run generate:moment
 ```
