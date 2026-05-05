@@ -203,7 +203,7 @@ async function ensureFounderBoard(today, now) {
 }
 
 function buildFounderBoard(today, signals, now, reason) {
-  const primarySignal = signals[0] || { label: "solo founders are using AI to ship and distribute faster", source: "fallback" };
+  const primarySignal = signals[0] || { label: "fundadores solo estão usando IA para enviar e distribuir mais rápido", source: "fallback" };
   const communitySignal =
     signals.find((signal) => signal.kind === "community") ||
     signals.find((signal) => signal.label?.toLowerCase().includes("build")) ||
@@ -216,73 +216,73 @@ function buildFounderBoard(today, signals, now, reason) {
     date: today,
     reason,
     createdAt: now.toISOString(),
-    stage: "Landing page live. Core Stride OS product still in development. Social agent and approval workflow are the first working wedge.",
+    stage: "Landing page no ar. Produto principal do Stride OS ainda em desenvolvimento. O agente social e o fluxo de aprovação são a primeira cunha funcional.",
     signals,
     integrations: buildIntegrationStatus(signals),
-    intelligence: hasOpenAI() ? "OpenAI enhanced" : "Rule-based fallback",
+    intelligence: hasOpenAI() ? "Aprimorado por OpenAI" : "Modo fallback",
     marketRadar: {
-      title: "Market Radar",
-      summary: "Solo founders are paying attention to AI leverage, distribution, and proof-of-work. The opportunity is to position Stride OS as the operating rhythm that turns real progress into public narrative.",
+      title: "Radar de Mercado",
+      summary: "Fundadores solo estão prestando atenção em alavancagem com IA, distribuição e trabalho real. A oportunidade é posicionar o Stride OS como o ritmo operacional que transforma progresso real em narrativa pública.",
       topSignals: signals.slice(0, 4).map((signal) => ({
         label: signal.label,
         source: signal.source,
         url: signal.url || signal.targetPostUrl || "",
         evidence: evidenceFor(signal)
       })),
-      implication: "Do not market Stride OS as a polished automation toy. Market it as a founder operating layer that starts while the product is still being built."
+      implication: "Não posicione o Stride OS como brinquedo de automação polido. Posicione como camada operacional do fundador que começa enquanto o produto ainda está sendo construído."
     },
     marketingDirector: {
-      title: "Marketing Director",
-      distributionBet: "Make X the proof channel, then reuse the best ideas in the build-in-public community and founder-focused Reddit posts.",
-      reasoning: `The strongest current angle is ${primarySignal.label}. Stride OS can enter that conversation by showing how a solo founder turns progress into distribution without sounding like a content machine.`,
+      title: "Diretor de Marketing",
+      distributionBet: "Use o X como canal de prova e depois reaproveite as melhores ideias na comunidade build-in-public e em posts no Reddit voltados a fundadores.",
+      reasoning: `O ângulo mais forte agora é: ${primarySignal.label}. O Stride OS pode entrar nessa conversa mostrando como um fundador solo transforma progresso em distribuição sem soar como uma máquina de conteúdo.`,
       recommendedActions: [
-        "Publish one profile post that names the current stage honestly: landing page live, product in development, distribution system being built in public.",
-        "Leave one thoughtful reply on a large-account post about AI agents, solo founders, distribution, or shipping.",
-        "Post one non-promotional question in the build-in-public community to learn how founders currently create weekly updates."
+        "Publicar um post no perfil nomeando o estágio atual com honestidade: landing page no ar, produto em desenvolvimento, sistema de distribuição sendo construído em público.",
+        "Deixar uma resposta relevante em um post de conta grande sobre agentes de IA, fundadores solo, distribuição ou envio de produto.",
+        "Postar uma pergunta não-promocional na comunidade build-in-public para entender como fundadores criam updates semanais hoje."
       ],
       experiment: {
-        name: "Proof before product",
-        hypothesis: "Honest early-stage proof-of-work will get better replies than polished product claims.",
-        metric: "Replies from solo founders, profile visits, and landing page clicks.",
-        duration: "7 days"
+        name: "Prova antes do produto",
+        hypothesis: "Trabalho real e honesto em estágio inicial vai gerar respostas melhores do que afirmações polidas sobre o produto.",
+        metric: "Respostas de fundadores solo, visitas ao perfil e cliques na landing page.",
+        duration: "7 dias"
       },
-      risk: "If every post points directly to Stride OS, it will feel like promotion. Keep most posts framed as founder operating lessons."
+      risk: "Se todos os posts apontarem direto pro Stride OS, vai parecer promoção. Mantenha a maioria dos posts enquadrada como lição operacional de fundador."
     },
     productDirector: {
-      title: "Product Director",
-      productBet: "Build the weekly founder update ritual before adding broad analytics or many channels.",
-      reasoning: "The core product value is not writing tweets. It is helping a solo founder know what changed, explain it clearly, and build a distribution habit around real business data.",
+      title: "Diretor de Produto",
+      productBet: "Construir o ritual semanal de update do fundador antes de adicionar analytics amplos ou muitos canais.",
+      reasoning: "O valor central do produto não é escrever tweets. É ajudar um fundador solo a saber o que mudou, explicar com clareza e construir um hábito de distribuição baseado em dados reais do negócio.",
       roadmapNow: [
-        "Weekly check-in flow: Stripe snapshot plus five founder questions.",
-        "Approval queue with evidence, surface, and rationale for every draft.",
-        "Learning loop: after publishing, capture what got replies/clicks and feed it back into next week's recommendations."
+        "Fluxo de check-in semanal: snapshot do Stripe mais cinco perguntas do fundador.",
+        "Fila de aprovação com evidência, superfície e racional para cada draft.",
+        "Loop de aprendizado: depois de publicar, capturar o que gerou respostas/cliques e realimentar nas recomendações da próxima semana."
       ],
       roadmapLater: [
-        "Reddit and community-specific posting flows.",
-        "Landing page conversion recommendations from comments and objections.",
-        "Product feedback inbox that turns replies into roadmap suggestions."
+        "Fluxos de postagem específicos para Reddit e comunidades.",
+        "Recomendações de conversão da landing page a partir de comentários e objeções.",
+        "Caixa de feedback do produto que transforma respostas em sugestões de roadmap."
       ],
-      risk: "Do not overbuild the executive-agent metaphor before the weekly update loop feels obviously useful."
+      risk: "Não construir demais a metáfora do agente executivo antes do loop de update semanal parecer obviamente útil."
     },
     chiefOfStaff: {
       title: "Chief of Staff",
-      todayFocus: "Use the board to produce one public proof-of-work post, one community learning post, and one high-context reply.",
+      todayFocus: "Use o conselho para produzir um post público de prova de trabalho, um post de aprendizado em comunidade e uma resposta com alto contexto.",
       decisions: [
-        "Keep Stride OS honest about stage: landing page and active project, not full app launch.",
-        "Prioritize distribution learning over feature breadth this week.",
-        "Treat replies and community posts as market research, not just engagement."
+        "Manter o Stride OS honesto sobre o estágio: landing page e projeto ativo, não lançamento completo do app.",
+        "Priorizar aprendizado de distribuição sobre amplitude de features nesta semana.",
+        "Tratar respostas e posts em comunidade como pesquisa de mercado, não só engajamento."
       ],
-      nextMove: "Generate the growth pack, approve only the drafts with evidence, and reject anything that feels like generic build-in-public advice."
+      nextMove: "Gerar o pacote de crescimento, aprovar apenas drafts com evidência e rejeitar qualquer coisa que pareça conselho genérico de build-in-public."
     },
     growthExperiment: {
-      title: "Growth Experiment",
-      name: "Founder Board narrative",
-      channel: "X profile plus build-in-public community",
-      hypothesis: "A solo founder publicly building with an AI founder board is more memorable than another SaaS scheduling tool.",
-      action: "Post a transparent build note about adding Marketing Director and Product Director agents to Stride OS.",
+      title: "Experimento de Crescimento",
+      name: "Narrativa do Conselho do Founder",
+      channel: "Perfil no X mais comunidade build-in-public",
+      hypothesis: "Um fundador solo construindo publicamente com um conselho de IA é mais memorável do que mais uma ferramenta de agendamento de SaaS.",
+      action: "Postar uma nota transparente sobre adicionar agentes Diretor de Marketing e Diretor de Produto ao Stride OS.",
       evidence: evidenceFor(aiSignal),
       sourceUrl: aiSignal.url || aiSignal.targetPostUrl || "",
-      successMetric: "At least one qualified founder reply, DM, or landing click."
+      successMetric: "Pelo menos uma resposta qualificada de fundador, DM ou clique na landing."
     }
   };
 }
@@ -296,13 +296,14 @@ async function enhanceFounderBoardWithOpenAI(board) {
       schema: founderBoardSchema,
       maxOutputTokens: 7000,
       instructions: [
-        "You are the AI Founder Board for Stride OS.",
-        "Act like a pragmatic CMO, CPO, Market Intelligence lead, Chief of Staff, and Growth lead for a solo founder.",
-        "Stride OS today: landing page is live, core product is still in development, social approval workflow exists, Stripe product is not ready.",
-        "Audience: solo founders building early-stage SaaS in public.",
-        "Voice: practical builder with a slight visionary edge. Honest, direct, no generic AI hype.",
-        "Use only the provided signals. Do not invent metrics, customers, revenue, launches, or product features.",
-        "Return concise strategic guidance that can directly feed content, replies, community posts, and product roadmap decisions."
+        "Você é o Conselho do Founder por IA do Stride OS.",
+        "Aja como um CMO pragmático, CPO, líder de Inteligência de Mercado, Chief of Staff e líder de Growth para um fundador solo.",
+        "Stride OS hoje: landing page no ar, produto principal ainda em desenvolvimento, fluxo de aprovação social existe, produto no Stripe ainda não está pronto.",
+        "Audiência: fundadores solo construindo SaaS em estágio inicial em público.",
+        "Voz: builder prático com leve toque visionário. Honesto, direto, sem hype genérico de IA.",
+        "Use apenas os signals fornecidos. Não invente métricas, clientes, receita, lançamentos ou features de produto.",
+        "Escreva todo o conteúdo em PORTUGUÊS BRASILEIRO. O texto que vai para os posts é tratado em outra etapa, aqui é apenas conteúdo estratégico para o fundador ler.",
+        "Retorne orientação estratégica concisa que possa alimentar diretamente conteúdo, respostas, posts em comunidade e decisões de roadmap."
       ].join("\n"),
       input: JSON.stringify({
         stage: board.stage,
@@ -320,19 +321,19 @@ async function enhanceFounderBoardWithOpenAI(board) {
 
     return {
       ...board,
-      intelligence: "OpenAI enhanced",
-      marketRadar: { title: "Market Radar", ...enhanced.marketRadar },
-      marketingDirector: { title: "Marketing Director", ...enhanced.marketingDirector },
-      productDirector: { title: "Product Director", ...enhanced.productDirector },
+      intelligence: "Aprimorado por OpenAI",
+      marketRadar: { title: "Radar de Mercado", ...enhanced.marketRadar },
+      marketingDirector: { title: "Diretor de Marketing", ...enhanced.marketingDirector },
+      productDirector: { title: "Diretor de Produto", ...enhanced.productDirector },
       chiefOfStaff: { title: "Chief of Staff", ...enhanced.chiefOfStaff },
-      growthExperiment: { title: "Growth Experiment", ...enhanced.growthExperiment }
+      growthExperiment: { title: "Experimento de Crescimento", ...enhanced.growthExperiment }
     };
   } catch (error) {
     console.warn("OpenAI founder board enhancement failed:", error.message);
     return {
       ...board,
-      intelligence: "Rule-based fallback",
-      openAIError: "A OpenAI nao conseguiu concluir a analise agora. O board usou o modo fallback e vai tentar novamente na proxima execucao."
+      intelligence: "Modo fallback",
+      openAIError: "A OpenAI não conseguiu concluir a análise agora. O conselho usou o modo fallback e vai tentar de novo na próxima execução."
     };
   }
 }
@@ -346,14 +347,16 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals) {
       schema: growthPackSchema,
       maxOutputTokens: 5000,
       instructions: [
-        "You are Stride OS's content strategist.",
-        "Rewrite or improve the provided draft items using the Founder Board context.",
-        "Keep every public text under 280 characters.",
-        "The output must include exactly five items.",
-        "Include at least one community-post item.",
-        "Keep reply items only if they include a real replyToPostId from the input.",
-        "Do not pretend Stride OS is fully launched. It currently has a landing page and project in development.",
-        "No hashtags unless genuinely necessary. No AI-sounding hype. No fake metrics."
+        "Você é o estrategista de conteúdo do Stride OS.",
+        "Reescreva ou melhore os itens de draft fornecidos usando o contexto do Conselho do Founder.",
+        "IMPORTANTE: o campo `text` (texto público que vai pro X) DEVE permanecer em INGLÊS — é o post final que vai pro Twitter/X.",
+        "Todos os outros campos auxiliares (recommendedSurface, viralThesis, evidence, trendSignal) devem ser escritos em PORTUGUÊS BRASILEIRO — eles são lidos pelo fundador no painel, não publicados.",
+        "Mantenha cada texto público (`text`) abaixo de 280 caracteres.",
+        "A saída deve conter exatamente cinco itens.",
+        "Inclua pelo menos um item community-post.",
+        "Mantenha itens reply apenas se eles tiverem um replyToPostId real vindo do input.",
+        "Não finja que o Stride OS está totalmente lançado. Atualmente tem só uma landing page e o projeto em desenvolvimento.",
+        "Sem hashtags a não ser que sejam genuinamente necessárias. Sem hype com cara de IA. Sem métricas falsas."
       ].join("\n"),
       input: JSON.stringify({
         board: {
@@ -407,47 +410,47 @@ function buildIntegrationStatus(signals) {
   const sources = new Set(signals.map((signal) => signal.source).filter(Boolean));
   return [
     {
-      name: "X market radar",
-      status: sources.has("x") ? "connected" : "not enough signal",
-      detail: "Reads recent posts from target accounts when X API read access is available."
+      name: "Radar de mercado no X",
+      status: sources.has("x") ? "Conectado" : "Sinal insuficiente",
+      detail: "Lê posts recentes de contas-alvo quando o acesso de leitura da API do X está disponível."
     },
     {
-      name: "X performance",
-      status: sources.has("x-performance") ? "connected" : "waiting",
-      detail: "Learns from your published posts once they have X metrics."
+      name: "Performance no X",
+      status: sources.has("x-performance") ? "Conectado" : "Aguardando",
+      detail: "Aprende com seus posts publicados assim que eles têm métricas no X."
     },
     {
-      name: "Landing analytics",
-      status: sources.has("plausible") || sources.has("posthog") || sources.has("google-analytics") ? "connected" : "needs connection",
-      detail: "Uses Google Analytics OAuth, Plausible, or PostHog when connected."
+      name: "Analytics da landing",
+      status: sources.has("plausible") || sources.has("posthog") || sources.has("google-analytics") ? "Conectado" : "Precisa conectar",
+      detail: "Usa Google Analytics OAuth, Plausible ou PostHog quando conectados."
     },
     {
-      name: "Reddit/community radar",
-      status: sources.has("reddit") ? "connected" : "limited",
-      detail: `Watches r/${redditSubreddits.slice(0, 3).join(", r/")} and related founder searches.`
+      name: "Radar de Reddit/comunidades",
+      status: sources.has("reddit") ? "Conectado" : "Limitado",
+      detail: `Monitora r/${redditSubreddits.slice(0, 3).join(", r/")} e buscas relacionadas a fundadores.`
     },
     {
-      name: "Internal feedback",
-      status: sources.has("strideos") ? "connected" : "waiting",
-      detail: "Uses approvals, rejections, failures, manual suggestions, and published queue history."
+      name: "Feedback interno",
+      status: sources.has("strideos") ? "Conectado" : "Aguardando",
+      detail: "Usa aprovações, rejeições, falhas, sugestões manuais e histórico da fila de publicados."
     }
   ];
 }
 
 function buildGrowthPackItems(today, signals) {
   const xSignals = signals.filter((signal) => signal.kind === "x-post");
-  const primarySignal = signals[0] || { label: "AI agents are making solo founders faster", source: "fallback" };
+  const primarySignal = signals[0] || { label: "agentes de IA estão deixando fundadores solo mais rápidos", source: "fallback" };
   const communitySignal =
     signals.find((signal) => signal.kind === "community") ||
     signals[1] ||
-    { label: "build-in-public works best when updates are tied to real progress", source: "fallback" };
+    { label: "build-in-public funciona melhor quando os updates estão ancorados em progresso real", source: "fallback" };
   const replyTargets = xSignals.filter((signal) => signal.replyToPostId && signal.replySettings === "everyone").slice(0, 2);
 
   const items = [
     {
       type: "post",
-      recommendedSurface: "Stride OS profile",
-      viralThesis: "Contrarian and founder-specific: it pushes against the generic AI speed narrative and names the new bottleneck.",
+      recommendedSurface: "Perfil Stride OS",
+      viralThesis: "Contrário e específico de fundador: contraria a narrativa genérica de velocidade da IA e nomeia o novo gargalo.",
       evidence: evidenceFor(primarySignal),
       sourceUrl: primarySignal.url,
       trendSignal: primarySignal.label,
@@ -455,27 +458,27 @@ function buildGrowthPackItems(today, signals) {
     },
     {
       type: "post",
-      recommendedSurface: "Stride OS profile",
-      viralThesis: "Stage transparency feels more credible than polished product claims and can attract builders who want the real process.",
-      evidence: "Stride OS is currently landing page plus active project, so the post is grounded in the actual build rather than pretending the full product is done.",
+      recommendedSurface: "Perfil Stride OS",
+      viralThesis: "Transparência sobre o estágio passa mais credibilidade do que afirmações polidas sobre o produto e atrai builders que querem o processo real.",
+      evidence: "O Stride OS hoje é landing page mais projeto ativo, então o post se ancora no build real em vez de fingir que o produto completo já está pronto.",
       sourceUrl: "https://getstrideos.com",
-      trendSignal: "Founders respond to honest process when the product is still being built.",
+      trendSignal: "Fundadores respondem a processo honesto quando o produto ainda está sendo construído.",
       text: trimPost(`Current Stride OS status:\n\nlanding page live\nproduct still being built\nsocial agent working before the core app is polished\n\nIt feels backwards, but maybe that is the point.\n\nDistribution is part of the product now.`)
     },
     {
       type: "post",
-      recommendedSurface: "Stride OS profile",
-      viralThesis: "The AI executive-board angle is more ownable than generic build-in-public advice and makes Stride OS feel bigger than a post generator.",
-      evidence: "Stride OS now has Market Radar feeding Marketing Director and Product Director recommendations before content drafts are created.",
-      trendSignal: "Solo founders are looking for leverage that feels like an operating team, not just isolated AI prompts.",
+      recommendedSurface: "Perfil Stride OS",
+      viralThesis: "O ângulo de conselho executivo de IA é mais ownable que conselho genérico de build-in-public e faz o Stride OS parecer maior que um gerador de posts.",
+      evidence: "O Stride OS agora tem Radar de Mercado alimentando recomendações de Diretor de Marketing e Diretor de Produto antes dos drafts de conteúdo serem criados.",
+      trendSignal: "Fundadores solo estão buscando alavancagem que pareça um time operando, não só prompts de IA isolados.",
       text: trimPost(`I am adding a tiny founder board to Stride OS:\n\nMarket Radar -> Marketing Director -> Product Director -> content agents\n\nThe goal is not more posts.\n\nThe goal is better founder decisions that turn into better public updates.`)
     },
     {
       type: "post",
       format: "community-post",
       requiresManualPublish: true,
-      recommendedSurface: "X build-in-public community",
-      viralThesis: "Question format invites other builders to compare workflows; this is optimized for replies and relationship, not a direct pitch.",
+      recommendedSurface: "Comunidade build-in-public no X",
+      viralThesis: "Formato de pergunta convida outros builders a comparar workflows; otimizado para respostas e relacionamento, não para pitch direto.",
       evidence: evidenceFor(communitySignal),
       sourceUrl: "https://x.com/i/communities/1493446837214187523",
       trendSignal: communitySignal.label,
@@ -492,9 +495,9 @@ function buildGrowthPackItems(today, signals) {
       targetPostUrl: target.targetPostUrl,
       targetPostText: target.targetPostText,
       targetPostSummary: target.targetPostSummary,
-      replyRationale: `Relevant ${target.targetHandle} post with public replies open; reply adds the Stride OS worldview without pitching.`,
-      recommendedSurface: `Reply to ${target.targetHandle}`,
-      viralThesis: "Replying to a high-signal large-account post can create discovery; the reply is framed as a founder insight, not a product ad.",
+      replyRationale: `Post relevante de ${target.targetHandle} com respostas públicas abertas; a resposta adiciona a visão do Stride OS sem fazer pitch.`,
+      recommendedSurface: `Resposta a ${target.targetHandle}`,
+      viralThesis: "Responder a um post de conta grande com bom sinal pode gerar descoberta; a resposta é enquadrada como insight de fundador, não como anúncio de produto.",
       evidence: evidenceFor(target),
       sourceUrl: target.targetPostUrl,
       trendSignal: target.label,
@@ -633,7 +636,7 @@ async function collectXPerformanceSignals() {
         return {
           kind: "performance",
           source: "x-performance",
-          label: `Published post performance: ${normalizeTweetText(tweet.text || "").slice(0, 120)}`,
+          label: `Performance do post publicado: ${normalizeTweetText(tweet.text || "").slice(0, 120)}`,
           url: `https://x.com/i/web/status/${tweet.id}`,
           metrics,
           score
@@ -677,7 +680,7 @@ async function collectPlausibleSignals() {
       {
         kind: "landing-analytics",
         source: "plausible",
-        label: `Landing analytics: ${visitors} visitors and ${pageviews} pageviews in the last 7 days${topSourceName ? `; top source ${topSourceName} with ${topSourceVisitors} visitors` : ""}`,
+        label: `Analytics da landing: ${visitors} visitantes e ${pageviews} pageviews nos últimos 7 dias${topSourceName ? `; top fonte ${topSourceName} com ${topSourceVisitors} visitantes` : ""}`,
         metrics: { visitors, pageviews, topSourceVisitors },
         score: visitors + topSourceVisitors * 2
       }
@@ -725,7 +728,7 @@ async function collectPostHogSignals() {
       {
         kind: "product-analytics",
         source: "posthog",
-        label: `Product/landing analytics: top event ${topEventName || "unknown"} (${topEventCount}); top page ${topUrlValue || "unknown"} (${topUrlViews} views)`,
+        label: `Analytics de produto/landing: top evento ${topEventName || "desconhecido"} (${topEventCount}); top página ${topUrlValue || "desconhecida"} (${topUrlViews} visualizações)`,
         url: topUrlValue,
         metrics: { topEventCount, topUrlViews },
         score: topEventCount + topUrlViews
@@ -773,7 +776,7 @@ async function collectGoogleAnalyticsSignals() {
       {
         kind: "landing-analytics",
         source: "google-analytics",
-        label: `Google Analytics: ${activeUsers} active users, ${sessions} sessions, ${pageViews} page views in the last 7 days${topSourceName ? `; top source ${topSourceName} with ${topSourceUsers} users` : ""}${topPagePath ? `; top page ${topPagePath} with ${topPageViews} views` : ""}`,
+        label: `Google Analytics: ${activeUsers} usuários ativos, ${sessions} sessões, ${pageViews} pageviews nos últimos 7 dias${topSourceName ? `; top fonte ${topSourceName} com ${topSourceUsers} usuários` : ""}${topPagePath ? `; top página ${topPagePath} com ${topPageViews} visualizações` : ""}`,
         metrics: { activeUsers, sessions, pageViews, engagementRate, topSourceUsers, topPageViews },
         score: activeUsers + sessions + topSourceUsers * 2 + topPageViews
       }
@@ -854,7 +857,7 @@ async function collectInternalFeedbackSignals() {
       {
         kind: "internal-feedback",
         source: "strideos",
-        label: `Internal queue: ${published} published, ${approved} approved, ${rejected} rejected, ${failed} failed, ${manual} manual suggestions`,
+        label: `Fila interna: ${published} publicados, ${approved} aprovados, ${rejected} rejeitados, ${failed} falharam, ${manual} sugestões manuais`,
         metrics: { published, approved, rejected, failed, manual },
         score: published + rejected + manual
       }
@@ -905,28 +908,28 @@ function evidenceFor(signal) {
   if (signal.source === "x") {
     const metrics = signal.metrics || {};
     const metricText = [
-      metrics.like_count ? `${metrics.like_count} likes` : "",
-      metrics.reply_count ? `${metrics.reply_count} replies` : "",
+      metrics.like_count ? `${metrics.like_count} curtidas` : "",
+      metrics.reply_count ? `${metrics.reply_count} respostas` : "",
       metrics.retweet_count ? `${metrics.retweet_count} reposts` : ""
     ]
       .filter(Boolean)
       .join(", ");
-    return `${signal.targetHandle || "X"} post about a relevant founder/AI/build-in-public topic${metricText ? ` with ${metricText}` : ""}.`;
+    return `Post de ${signal.targetHandle || "X"} sobre um tema relevante de fundador/IA/build-in-public${metricText ? ` com ${metricText}` : ""}.`;
   }
   if (signal.source === "x-performance") {
     const metrics = signal.metrics || {};
-    return `Your own published post had ${metrics.like_count || 0} likes, ${metrics.reply_count || 0} replies, ${metrics.retweet_count || 0} reposts, and ${metrics.quote_count || 0} quotes.`;
+    return `Seu post publicado teve ${metrics.like_count || 0} curtidas, ${metrics.reply_count || 0} respostas, ${metrics.retweet_count || 0} reposts e ${metrics.quote_count || 0} citações.`;
   }
   if (signal.source === "plausible") return signal.label;
   if (signal.source === "posthog") return signal.label;
   if (signal.source === "google-analytics") return signal.label;
   if (signal.source === "reddit") {
     const metrics = signal.metrics || {};
-    return `Reddit discussion with ${metrics.score || 0} upvotes and ${metrics.comments || 0} comments.`;
+    return `Discussão no Reddit com ${metrics.score || 0} upvotes e ${metrics.comments || 0} comentários.`;
   }
   if (signal.source === "strideos") return signal.label;
-  if (signal.source === "hn") return `Recent Hacker News signal: ${signal.label}.`;
-  return `Strategic fit with Stride OS: ${signal.label}.`;
+  if (signal.source === "hn") return `Sinal recente do Hacker News: ${signal.label}.`;
+  return `Encaixe estratégico com o Stride OS: ${signal.label}.`;
 }
 
 function dedupeSignals(signals) {
@@ -1108,31 +1111,31 @@ function summarizeTweet(text) {
 function pickFounderMomentSignal(today) {
   const options = [
     {
-      title: "Landing page before product",
-      recommendedSurface: "Manual post on Stride OS profile",
-      viralThesis: "A real laptop/workspace photo makes the early-stage build tangible and avoids the generic AI-generated founder advice pattern.",
-      evidence: "The product is still in development, while the landing page and social agent already exist. That tension is the story.",
+      title: "Landing page antes do produto",
+      recommendedSurface: "Post manual no perfil Stride OS",
+      viralThesis: "Uma foto real do laptop/workspace torna o build em estágio inicial tangível e evita o padrão genérico de conselho de fundador gerado por IA.",
+      evidence: "O produto ainda está em desenvolvimento enquanto a landing page e o agente social já existem. Essa tensão é a história.",
       sourceUrl: "https://getstrideos.com",
-      trendSignal: "Founders are using AI to ship faster, but distribution and narrative now start before the full product is finished.",
-      whyNow: "Stride OS is honestly still landing page plus active project. Showing that stage makes the build feel real and avoids overclaiming.",
-      visualBrief: "Take a photo of your laptop with the Stride OS landing page open and your project/editor or notes visible beside it. Do not show fake product screens.",
-      captureInstruction: "Open getstrideos.com on one side and your actual project workspace or notes on the other. Hide secrets, tokens, private tabs, and anything customer-related. Use a normal desk photo, not a polished mockup.",
-      postingNotes: "Frame it as a real build note: landing page is live, product is in progress, and you are building the distribution engine in public. Do not imply the full app is launched.",
-      imageAlt: "Laptop showing the Stride OS landing page beside project notes or code, with private details hidden.",
+      trendSignal: "Fundadores estão usando IA pra entregar mais rápido, mas distribuição e narrativa agora começam antes do produto completo estar pronto.",
+      whyNow: "O Stride OS hoje é honestamente landing page mais projeto ativo. Mostrar esse estágio faz o build parecer real e evita exagero.",
+      visualBrief: "Tire uma foto do seu laptop com a landing page do Stride OS aberta e seu projeto/editor ou anotações visíveis ao lado. Não mostre telas de produto falsas.",
+      captureInstruction: "Abra getstrideos.com de um lado e seu workspace ou anotações reais do outro. Esconda segredos, tokens, abas privadas e qualquer coisa relacionada a clientes. Use uma foto de mesa normal, não um mockup polido.",
+      postingNotes: "Enquadre como uma nota real de build: landing page no ar, produto em progresso e você construindo a engine de distribuição em público. Não dê a entender que o app completo está lançado.",
+      imageAlt: "Laptop mostrando a landing page do Stride OS ao lado de notas ou código do projeto, com detalhes privados escondidos.",
       text: "Current Stride OS reality:\n\nlanding page is live\nproduct is still being built\nI am building the distribution system in public too\n\nIt feels early because it is.\n\nBut I want the story to compound while the product does."
     },
     {
-      title: "The messy founder operating note",
-      recommendedSurface: "Manual post on Stride OS profile",
-      viralThesis: "Unpolished proof-of-work photos can create more trust than abstract build-in-public advice because they show the founder is actually in the work.",
-      evidence: "Stride OS is currently an active project with the core product still being built, so the most honest content is the operating note behind the product.",
+      title: "A nota operacional bagunçada do fundador",
+      recommendedSurface: "Post manual no perfil Stride OS",
+      viralThesis: "Fotos não-polidas de trabalho real podem gerar mais confiança que conselho abstrato de build-in-public porque mostram que o fundador está de fato no trabalho.",
+      evidence: "O Stride OS hoje é um projeto ativo com o produto principal ainda sendo construído, então o conteúdo mais honesto é a nota operacional por trás do produto.",
       sourceUrl: "https://getstrideos.com",
-      trendSignal: "Build-in-public posts that show unfinished work can outperform generic advice because they create proof of work and invite builders into the process.",
-      whyNow: "The main Stride OS app is still in development, so the strongest visual is the honest operating layer: notes, landing page, tasks, and decisions.",
-      visualBrief: "Photo of a notebook or laptop note with the five questions you want Stride OS to ask each week. Put the landing page in the background if possible.",
-      captureInstruction: "Write the five questions on paper or in a notes app. Keep the product unfinishedness visible but not chaotic. Hide private information.",
-      postingNotes: "Make the caption about the insight behind the product, not a feature announcement.",
-      imageAlt: "Founder notes showing five weekly build-in-public questions with the Stride OS landing page in the background.",
+      trendSignal: "Posts de build-in-public que mostram trabalho inacabado podem superar conselho genérico porque criam prova de trabalho e convidam builders pro processo.",
+      whyNow: "O app principal do Stride OS ainda está em desenvolvimento, então o visual mais forte é a camada operacional honesta: notas, landing page, tarefas e decisões.",
+      visualBrief: "Foto de um caderno ou anotação de laptop com as cinco perguntas que você quer que o Stride OS faça toda semana. Coloque a landing page ao fundo se possível.",
+      captureInstruction: "Escreva as cinco perguntas no papel ou num app de notas. Mantenha o ar de inacabado do produto visível mas sem caos. Esconda informação privada.",
+      postingNotes: "Faça a legenda ser sobre o insight por trás do produto, não um anúncio de feature.",
+      imageAlt: "Notas do fundador mostrando cinco perguntas semanais de build-in-public com a landing page do Stride OS ao fundo.",
       text: "I do not have the full Stride OS app polished yet.\n\nBut the core idea keeps getting clearer:\n\nfounder updates should start from what actually changed that week.\n\nThe product is being built around that ritual."
     }
   ];
@@ -1143,13 +1146,13 @@ function pickFounderMomentSignal(today) {
 function nextProfilePost(index, communitySignal) {
   const posts = [
     {
-      viralThesis: "Checklist posts are saveable and reply-friendly, but this one is tied to operating rhythm instead of generic content advice.",
-      evidence: "This maps directly to Stride OS: Stripe data plus five weekly questions before generating a public update.",
-      trendSignal: "Build in public works better when the update starts from evidence.",
+      viralThesis: "Posts em formato de checklist são salváveis e geram respostas, mas este aqui é amarrado a ritmo operacional em vez de conselho genérico de conteúdo.",
+      evidence: "Mapeia direto pro Stride OS: dados do Stripe mais cinco perguntas semanais antes de gerar o update público.",
+      trendSignal: "Build-in-public funciona melhor quando o update começa de evidência.",
       text: trimPost(`A weekly founder update should not start from \"what should I post?\"\n\nIt should start from:\n\nwhat shipped\nwhat moved\nwhat broke\nwhat changed in the numbers\nwhat I learned\n\nThat is the difference between content and operating in public.`)
     },
     {
-      viralThesis: "Anti-theater framing attracts builders tired of generic build-in-public advice.",
+      viralThesis: "O enquadramento anti-teatro atrai builders cansados de conselho genérico de build-in-public.",
       evidence: evidenceFor(communitySignal),
       sourceUrl: communitySignal.url,
       trendSignal: communitySignal.label,
@@ -1158,7 +1161,7 @@ function nextProfilePost(index, communitySignal) {
   ];
   return {
     type: "post",
-    recommendedSurface: "Stride OS profile",
+    recommendedSurface: "Perfil Stride OS",
     ...posts[index % posts.length]
   };
 }
