@@ -294,7 +294,7 @@ async function enhanceFounderBoardWithOpenAI(board) {
     const enhanced = await createStructuredJson({
       name: "founder_board",
       schema: founderBoardSchema,
-      maxOutputTokens: 2400,
+      maxOutputTokens: 7000,
       instructions: [
         "You are the AI Founder Board for Stride OS.",
         "Act like a pragmatic CMO, CPO, Market Intelligence lead, Chief of Staff, and Growth lead for a solo founder.",
@@ -307,7 +307,7 @@ async function enhanceFounderBoardWithOpenAI(board) {
       input: JSON.stringify({
         stage: board.stage,
         integrations: board.integrations,
-        signals: board.signals,
+        signals: compactSignals(board.signals).slice(0, 8),
         fallbackBoard: {
           marketRadar: board.marketRadar,
           marketingDirector: board.marketingDirector,
@@ -332,7 +332,7 @@ async function enhanceFounderBoardWithOpenAI(board) {
     return {
       ...board,
       intelligence: "Rule-based fallback",
-      openAIError: error.message
+      openAIError: "A OpenAI nao conseguiu concluir a analise agora. O board usou o modo fallback e vai tentar novamente na proxima execucao."
     };
   }
 }
@@ -344,7 +344,7 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals) {
     const enhanced = await createStructuredJson({
       name: "growth_pack",
       schema: growthPackSchema,
-      maxOutputTokens: 2200,
+      maxOutputTokens: 5000,
       instructions: [
         "You are Stride OS's content strategist.",
         "Rewrite or improve the provided draft items using the Founder Board context.",
@@ -364,7 +364,7 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals) {
           chiefOfStaff: board?.chiefOfStaff,
           growthExperiment: board?.growthExperiment
         },
-        signals,
+        signals: compactSignals(signals).slice(0, 8),
         draftItems: items
       })
     });
@@ -390,6 +390,17 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals) {
     console.warn("OpenAI growth pack enhancement failed:", error.message);
     return items;
   }
+}
+
+function compactSignals(signals = []) {
+  return signals.map((signal) => ({
+    kind: signal.kind || "",
+    source: signal.source || "",
+    label: signal.label || "",
+    url: signal.url || signal.targetPostUrl || "",
+    evidence: evidenceFor(signal),
+    metrics: signal.metrics || {}
+  }));
 }
 
 function buildIntegrationStatus(signals) {

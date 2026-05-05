@@ -6,7 +6,7 @@ export function hasOpenAI() {
   return Boolean(openaiEnabled && openaiApiKey);
 }
 
-export async function createStructuredJson({ name, schema, instructions, input, maxOutputTokens = 1800 }) {
+export async function createStructuredJson({ name, schema, instructions, input, maxOutputTokens = 6000 }) {
   if (!hasOpenAI()) return null;
 
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -39,7 +39,12 @@ export async function createStructuredJson({ name, schema, instructions, input, 
 
   const outputText = extractOutputText(json);
   if (!outputText) throw new Error("OpenAI response did not include output text.");
-  return JSON.parse(outputText);
+  try {
+    return JSON.parse(outputText);
+  } catch (error) {
+    const reason = json.status === "incomplete" ? json.incomplete_details?.reason || "incomplete" : "invalid_json";
+    throw new Error(`OpenAI returned ${reason}. Increase max output tokens or reduce prompt size.`);
+  }
 }
 
 function extractOutputText(response) {
