@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { loadEnv } from "./scripts/load-env.mjs";
 import { createQueueItem, readQueue, updateQueue } from "./scripts/queue-store.mjs";
 import { publishApproved } from "./scripts/publisher.mjs";
-import { generateDailyGrowthPack, generateFounderBoard, generateFounderMoment, readAgentState, startRenderAgents } from "./scripts/render-agents.mjs";
+import { generateDailyGrowthPack, generateFounderBoard, generateFounderMoment, generateXAccountEvolution, readAgentState, startRenderAgents } from "./scripts/render-agents.mjs";
 import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleAnalyticsStatus, getGoogleRedirectUri, hasGoogleAnalyticsConfig } from "./scripts/google-analytics-client.mjs";
 
 await loadEnv();
@@ -69,6 +69,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/agents/run/growth" && req.method === "POST") return handleRunGrowthAgent(res);
     if (url.pathname === "/agents/run/board" && req.method === "POST") return handleRunFounderBoardAgent(res);
     if (url.pathname === "/agents/run/founder-moment" && req.method === "POST") return handleRunFounderMomentAgent(res);
+    if (url.pathname === "/agents/run/x-evolution" && req.method === "POST") return handleRunXEvolutionAgent(res);
     if (url.pathname === "/archive/delete-rejected" && req.method === "POST") return handleDeleteRejected(req, res);
 
     const itemAction = url.pathname.match(/^\/items\/([^/]+)\/(approve|reject|draft|update|publish|delete|convert-to-post|manual-posted)$/);
@@ -262,6 +263,11 @@ async function handleRunFounderBoardAgent(res) {
 async function handleRunFounderMomentAgent(res) {
   await generateFounderMoment({ force: true, reason: "dashboard" });
   return redirect(res, "/aprovacao?aba=moments");
+}
+
+async function handleRunXEvolutionAgent(res) {
+  await generateXAccountEvolution({ force: true, reason: "dashboard" });
+  return redirect(res, "/aprendizados");
 }
 
 function handleGoogleAuth(req, res) {
@@ -700,7 +706,8 @@ function renderAgentStatusCompact(agentState = {}) {
   const items = [
     { label: "Conselho do Founder", state: agentState.founderBoard, schedule: "08:30" },
     { label: "Pacote de crescimento", state: agentState.growthPack, schedule: "09:00" },
-    { label: "Founder moment", state: agentState.founderMoment, schedule: "10:30" }
+    { label: "Founder moment", state: agentState.founderMoment, schedule: "10:30" },
+    { label: "Evolução no X", state: agentState.xAccountEvolution, schedule: "18:00" }
   ];
 
   const rows = items
@@ -1009,6 +1016,7 @@ function renderLearningsPage(queue, options) {
   const rejected = queue.items.filter((i) => i.status === "rejected").sort(compareByDateDesc);
   const topThemes = extractTopThemes(published, 5);
   const patterns = computePatterns(queue);
+  const xEvolution = options.agentState?.xAccountEvolution;
 
   const content = `
     <div class="page-head">
@@ -1023,6 +1031,8 @@ function renderLearningsPage(queue, options) {
       <div class="metric"><div class="label">Rejeitados</div><div class="value">${stats.rejected}</div><div class="delta">${stats.rejectionRate}% do total revisado</div></div>
       <div class="metric"><div class="label">Falhas de publicação</div><div class="value">${stats.failed}</div><div class="delta">${stats.failed > 0 ? "Confira os erros" : "Sem falhas"}</div></div>
     </div>
+
+    ${renderXEvolutionCard(xEvolution)}
 
     <div class="card-grid cols-2" style="gap: 16px;">
       <section class="card">
@@ -1112,6 +1122,63 @@ function renderLearningsPage(queue, options) {
     pageHint: stats.published > 0 ? `${stats.published} publicado${stats.published === 1 ? "" : "s"} no total` : "histórico em construção",
     queueHint: { pending: pendingTotal || undefined }
   }, content);
+}
+
+function renderXEvolutionCard(report) {
+  const metrics = report?.metrics || {};
+  const deltas = report?.deltas || {};
+  const topPosts = Array.isArray(report?.topPosts) ? report.topPosts : [];
+  const recommendations = Array.isArray(report?.recommendations) ? report.recommendations : [];
+
+  return `<section class="card" style="margin-bottom: 16px;">
+    <div class="card-head">
+      <div>
+        <h3>Evolução da conta no X</h3>
+        <p class="subtle">${report?.createdAt ? `Último snapshot em ${formatDate(report.createdAt)} às ${formatTime(report.createdAt)}.` : "Ainda sem snapshot. Rode o agente para criar a primeira linha de base."}</p>
+      </div>
+      <form method="post" action="/agents/run/x-evolution">
+        <button type="submit" class="secondary compact">Rodar agora</button>
+      </form>
+    </div>
+    ${
+      report
+        ? `<p style="font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); margin-bottom: 12px;">${escapeHtml(report.summary || "")}</p>
+          <div class="metric-grid" style="margin-bottom: 12px;">
+            <div class="metric"><div class="label">Seguidores</div><div class="value">${escapeHtml(formatCount(metrics.followers))}</div><div class="delta">${escapeHtml(formatDelta(deltas.followers))}</div></div>
+            <div class="metric"><div class="label">Posts totais</div><div class="value">${escapeHtml(formatCount(metrics.posts))}</div><div class="delta">${escapeHtml(formatDelta(deltas.posts))}</div></div>
+            <div class="metric"><div class="label">Seguindo</div><div class="value">${escapeHtml(formatCount(metrics.following))}</div><div class="delta">${escapeHtml(formatDelta(deltas.following))}</div></div>
+            <div class="metric"><div class="label">Listas</div><div class="value">${escapeHtml(formatCount(metrics.listed))}</div><div class="delta">${escapeHtml(formatDelta(deltas.listed))}</div></div>
+          </div>
+          ${
+            topPosts.length === 0
+              ? `<p class="subtle">Sem posts publicados com métricas do X ainda.</p>`
+              : `<div class="row" style="gap: 8px;">${topPosts
+                  .map(
+                    (post) => `<div style="padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft);">
+                      <div style="display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px;">
+                        <strong style="font-size: 13px;">Score ${escapeHtml(formatCount(post.score))}</strong>
+                        <a href="${escapeHtml(post.url || "#")}" target="_blank" rel="noreferrer" style="font-size: 12px;">Abrir no X</a>
+                      </div>
+                      <p style="font-size: 13px; line-height: 1.45; color: var(--ink-soft);">${escapeHtml(truncate(post.text || "", 180))}</p>
+                    </div>`
+                  )
+                  .join("")}</div>`
+          }
+          ${recommendations.length ? `<div style="margin-top: 12px;">${renderCouncilList("Recomendações", recommendations)}</div>` : ""}`
+        : `<p class="subtle">O agente vai comparar seguidores e posts publicados entre snapshots diários.</p>`
+    }
+  </section>`;
+}
+
+function formatCount(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? new Intl.NumberFormat("pt-BR").format(number) : "0";
+}
+
+function formatDelta(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number) || number === 0) return "sem variação";
+  return `${number > 0 ? "+" : ""}${formatCount(number)} desde o último snapshot`;
 }
 
 function computeLearningStats(queue) {
@@ -1266,6 +1333,7 @@ function renderSettingsPage(_queue, options) {
         ${renderAgentRow("Conselho do Founder", options.agentState?.founderBoard, "08:30 BRT", "/agents/run/board")}
         ${renderAgentRow("Pacote de crescimento", options.agentState?.growthPack, "09:00 BRT", "/agents/run/growth")}
         ${renderAgentRow("Founder moment", options.agentState?.founderMoment, "10:30 BRT", "/agents/run/founder-moment")}
+        ${renderAgentRow("Evolução da conta no X", options.agentState?.xAccountEvolution, "18:00 BRT", "/agents/run/x-evolution")}
       </div>
     </section>
 

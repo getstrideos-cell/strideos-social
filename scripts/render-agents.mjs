@@ -14,6 +14,8 @@ const growthHour = Number(process.env.GROWTH_PACK_HOUR || 9);
 const growthMinute = Number(process.env.GROWTH_PACK_MINUTE || 0);
 const momentHour = Number(process.env.FOUNDER_MOMENT_HOUR || 10);
 const momentMinute = Number(process.env.FOUNDER_MOMENT_MINUTE || 30);
+const xEvolutionHour = Number(process.env.X_EVOLUTION_HOUR || 18);
+const xEvolutionMinute = Number(process.env.X_EVOLUTION_MINUTE || 0);
 const schedulerIntervalMs = Number(process.env.AGENT_SCHEDULER_INTERVAL_MS || 60_000);
 const replyMaxAgeHours = Number(process.env.REPLY_MAX_AGE_HOURS || 36);
 const xSignalMaxAgeHours = Number(process.env.X_SIGNAL_MAX_AGE_HOURS || 96);
@@ -90,6 +92,10 @@ export async function runDueRenderAgents(now = new Date()) {
 
   if (isWithinScheduleWindow(local, momentHour, momentMinute)) {
     results.push(await generateFounderMoment({ reason: "schedule", now }));
+  }
+
+  if (isWithinScheduleWindow(local, xEvolutionHour, xEvolutionMinute)) {
+    results.push(await generateXAccountEvolution({ reason: "schedule", now }));
   }
 
   return results;
@@ -195,6 +201,28 @@ export async function generateFounderMoment({ force = false, reason = "manual", 
   await writeAgentState(latestState);
 
   return { agent: "founder-moment", status: "created", date: today, count: 1 };
+}
+
+export async function generateXAccountEvolution({ force = false, reason = "manual", now = new Date() } = {}) {
+  const today = getLocalDateKey(now);
+  const state = await readAgentState();
+
+  if (!force && state.xAccountEvolution?.date === today) {
+    return { agent: "x-account-evolution", status: "skipped", date: today, reason: "already-created" };
+  }
+
+  const previous = state.xAccountEvolution;
+  const report = await buildXAccountEvolutionReport(previous, now);
+  const latestState = await readAgentState();
+  latestState.xAccountEvolution = {
+    ...report,
+    date: today,
+    reason,
+    createdAt: now.toISOString()
+  };
+  await writeAgentState(latestState);
+
+  return { agent: "x-account-evolution", status: report.available ? "created" : "limited", date: today };
 }
 
 export async function readAgentState() {
@@ -693,6 +721,130 @@ async function collectXPerformanceSignals() {
     console.warn("Could not collect X performance signals:", error.message);
     return [];
   }
+}
+
+async function buildXAccountEvolutionReport(previous, now) {
+  const tokenState = await getFreshXTokenState();
+  if (!tokenState.accessToken) {
+    return {
+      available: false,
+      summary: "X não está disponível para leitura agora. Conecte ou regenere os tokens para medir evolução da conta.",
+      metrics: {},
+      deltas: {},
+      topPosts: [],
+      recommendations: ["Verificar se X_USER_ACCESS_TOKEN e X_REFRESH_TOKEN continuam válidos no Render."]
+    };
+  }
+
+  try {
+    const me = await xFetchJson(
+      "https://api.x.com/2/users/me?user.fields=public_metrics,username,name,created_at",
+      tokenState
+    );
+    const user = me?.data || {};
+    const metrics = user.public_metrics || {};
+    const queue = await readQueue();
+    const published = queue.items
+      .filter((item) => item.status === "published" && item.xPostId)
+      .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+      .slice(0, 20);
+
+    const topPosts = await fetchPublishedPostMetrics(published, tokenState);
+    const snapshot = {
+      username: user.username || "",
+      name: user.name || "",
+      followers: Number(metrics.followers_count || 0),
+      following: Number(metrics.following_count || 0),
+      posts: Number(metrics.tweet_count || 0),
+      listed: Number(metrics.listed_count || 0)
+    };
+    const deltas = {
+      followers: snapshot.followers - Number(previous?.metrics?.followers || snapshot.followers),
+      following: snapshot.following - Number(previous?.metrics?.following || snapshot.following),
+      posts: snapshot.posts - Number(previous?.metrics?.posts || snapshot.posts),
+      listed: snapshot.listed - Number(previous?.metrics?.listed || snapshot.listed)
+    };
+
+    const bestPost = topPosts[0];
+    const summary = [
+      `@${snapshot.username || "conta"} está com ${snapshot.followers} seguidores`,
+      deltas.followers === 0 ? "sem variação de seguidores desde o último snapshot" : `${signed(deltas.followers)} seguidores desde o último snapshot`,
+      bestPost ? `melhor post recente: ${bestPost.score} pontos de engajamento` : "ainda sem posts publicados com ID do X para comparar"
+    ].join("; ");
+
+    return {
+      available: true,
+      summary,
+      metrics: snapshot,
+      deltas,
+      topPosts,
+      recommendations: buildXEvolutionRecommendations(deltas, topPosts, now)
+    };
+  } catch (error) {
+    console.warn("Could not build X account evolution report:", error.message);
+    return {
+      available: false,
+      summary: `Não foi possível ler a evolução da conta no X agora: ${error.message}`,
+      metrics: previous?.metrics || {},
+      deltas: {},
+      topPosts: previous?.topPosts || [],
+      recommendations: ["Tentar novamente mais tarde ou verificar permissões tweet.read/users.read no X."]
+    };
+  }
+}
+
+async function fetchPublishedPostMetrics(items, tokenState) {
+  const ids = items.map((item) => item.xPostId).filter(Boolean);
+  if (ids.length === 0) return [];
+
+  const tweets = await xFetchJson(
+    `https://api.x.com/2/tweets?ids=${encodeURIComponent(ids.join(","))}&tweet.fields=created_at,public_metrics,text`,
+    tokenState
+  );
+  const byId = new Map((tweets.data || []).map((tweet) => [tweet.id, tweet]));
+
+  return items
+    .map((item) => {
+      const tweet = byId.get(item.xPostId);
+      if (!tweet) return null;
+      const metrics = tweet.public_metrics || {};
+      const score =
+        Number(metrics.like_count || 0) +
+        Number(metrics.reply_count || 0) * 4 +
+        Number(metrics.retweet_count || 0) * 3 +
+        Number(metrics.quote_count || 0) * 3;
+      return {
+        id: tweet.id,
+        url: `https://x.com/i/web/status/${tweet.id}`,
+        text: normalizeTweetText(tweet.text || item.text || "").slice(0, 220),
+        createdAt: tweet.created_at || item.updatedAt || "",
+        metrics,
+        score
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .slice(0, 5);
+}
+
+function buildXEvolutionRecommendations(deltas, topPosts, now) {
+  const recommendations = [];
+  const bestPost = topPosts[0];
+
+  if (deltas.followers > 0) {
+    recommendations.push(`Dobrar no formato que trouxe crescimento: revisar o melhor post recente e criar uma variação no próximo pacote.`);
+  } else {
+    recommendations.push("Priorizar replies em contas grandes e perguntas de comunidade para gerar descoberta antes de pedir cliques.");
+  }
+
+  if (bestPost?.metrics?.reply_count > 0) {
+    recommendations.push("Transformar respostas do melhor post em pesquisa de mercado: quais objeções, frases e dores apareceram?");
+  } else {
+    recommendations.push("Testar posts com pergunta operacional clara no final para aumentar respostas qualificadas de fundadores.");
+  }
+
+  recommendations.push(`Próximo snapshot automático: ${getLocalDateKey(new Date(now.getTime() + 24 * 60 * 60 * 1000))}.`);
+  return recommendations;
 }
 
 async function collectPlausibleSignals() {
@@ -1395,6 +1547,11 @@ async function writeAgentState(state) {
 function trimPost(text) {
   if (text.length <= 280) return text;
   return `${text.slice(0, 276).trimEnd()}...`;
+}
+
+function signed(value) {
+  const number = Number(value || 0);
+  return number > 0 ? `+${number}` : String(number);
 }
 
 function getLocalDateKey(date) {
