@@ -1303,8 +1303,12 @@ function describeIntegrations(_options) {
   const openai = !!env.OPENAI_API_KEY;
   const plausible = !!env.PLAUSIBLE_API_KEY && !!env.PLAUSIBLE_SITE_ID;
   const posthog = !!env.POSTHOG_PERSONAL_API_KEY && !!env.POSTHOG_PROJECT_ID;
-  const reddit = !!env.REDDIT_SUBREDDITS;
-  const targets = !!env.TARGET_X_HANDLES;
+  const redditConfigured = !!env.REDDIT_SUBREDDITS;
+  const targetsConfigured = !!env.TARGET_X_HANDLES;
+  const defaultRedditSubreddits = "SaaS,startups,Entrepreneur,SideProject,indiehackers";
+  const defaultTargetHandles = "gregisenberg,noahkagan,george__mack,buildinpublic,openai,perplexity_ai,AnthropicAI";
+  const redditSubreddits = env.REDDIT_SUBREDDITS || defaultRedditSubreddits;
+  const targetHandles = env.TARGET_X_HANDLES || defaultTargetHandles;
   const google = _options.googleAnalytics || {};
 
   return [
@@ -1330,13 +1334,15 @@ function describeIntegrations(_options) {
     },
     {
       name: "Reddit",
-      description: env.REDDIT_SUBREDDITS ? `Subreddits: ${env.REDDIT_SUBREDDITS}.` : "Radar de comunidades de fundadores.",
-      ...statusOf(reddit)
+      description: `${redditConfigured ? "Lista configurada" : "Lista padrão sem OAuth"}: r/${redditSubreddits.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 5).join(", r/")}. Usado como radar público; pode ficar limitado por bloqueio ou rate limit.`,
+      status: redditConfigured ? "Configurado" : "Ativo público",
+      statusClass: redditConfigured ? "approved" : "published"
     },
     {
       name: "Contas no X (radar)",
-      description: env.TARGET_X_HANDLES ? `Monitorando: ${env.TARGET_X_HANDLES}.` : "Monitora contas-âncora para sinais de mercado.",
-      ...statusOf(targets)
+      description: `${targetsConfigured ? "Lista configurada" : "Lista padrão"}: ${targetHandles.split(",").map((s) => `@${s.trim().replace(/^@/, "")}`).filter(Boolean).slice(0, 7).join(", ")}. Usa o acesso do X para buscar sinais recentes.`,
+      status: x ? (targetsConfigured ? "Conectado" : "Ativo padrão") : "Precisa do X",
+      statusClass: x ? (targetsConfigured ? "approved" : "published") : "failed"
     },
     {
       name: "Google Analytics",
