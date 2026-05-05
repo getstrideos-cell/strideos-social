@@ -116,7 +116,26 @@ Connected sources:
 - X performance: learns from published posts that have an `xPostId` in the queue.
 - Reddit/community radar: reads public subreddit search results.
 - Plausible or PostHog: reads landing/product analytics when keys are configured.
+- Google Analytics: connect through OAuth from the dashboard and read GA4 landing analytics.
 - Internal feedback: uses approvals, rejections, failures, published queue history, and manual suggestions.
+
+Google Analytics OAuth:
+
+```bash
+GOOGLE_ANALYTICS_PROPERTY_ID=533586451
+GOOGLE_CLIENT_ID=your_google_oauth_client_id
+GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+GOOGLE_REDIRECT_URI=https://strideos-social.onrender.com/auth/google/callback
+GOOGLE_LOGIN_HINT=getstrideos@gmail.com
+```
+
+In Google Cloud, enable the Google Analytics Data API, create an OAuth client for a Web application, and add this authorized redirect URI:
+
+```text
+https://strideos-social.onrender.com/auth/google/callback
+```
+
+After the Render variables are saved, use the dashboard button `Conectar Google Analytics`.
 
 Optional OpenAI enhancement:
 

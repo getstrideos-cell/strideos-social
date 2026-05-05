@@ -4,6 +4,7 @@ import { loadEnv } from "./scripts/load-env.mjs";
 import { createQueueItem, readQueue, updateQueue } from "./scripts/queue-store.mjs";
 import { publishApproved } from "./scripts/publisher.mjs";
 import { generateDailyGrowthPack, generateFounderBoard, generateFounderMoment, readAgentState, startRenderAgents } from "./scripts/render-agents.mjs";
+import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleAnalyticsStatus, getGoogleRedirectUri, hasGoogleAnalyticsConfig } from "./scripts/google-analytics-client.mjs";
 
 await loadEnv();
 
@@ -65,7 +66,16 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/" && req.method === "GET") {
       const queue = await readQueue();
       const agentState = await readAgentState();
-      return sendHtml(res, renderDashboard(queue, { dryRun, publishIntervalMinutes, agentState }));
+      const googleAnalytics = await getGoogleAnalyticsStatus();
+      return sendHtml(res, renderDashboard(queue, { dryRun, publishIntervalMinutes, agentState, googleAnalytics }));
+    }
+
+    if (url.pathname === "/auth/google" && req.method === "POST") {
+      return handleGoogleAuth(req, res);
+    }
+
+    if (url.pathname === "/auth/google/callback" && req.method === "GET") {
+      return handleGoogleCallback(req, res, url);
     }
 
     if (url.pathname === "/items" && req.method === "POST") {
@@ -236,6 +246,33 @@ async function handleRunFounderBoardAgent(res) {
 
 async function handleRunFounderMomentAgent(res) {
   await generateFounderMoment({ force: true, reason: "dashboard" });
+  return redirect(res, "/");
+}
+
+function handleGoogleAuth(req, res) {
+  if (!hasGoogleAnalyticsConfig()) {
+    return sendText(res, 400, "Google Analytics OAuth is missing GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, or GOOGLE_ANALYTICS_PROPERTY_ID.");
+  }
+  const state = randomBytes(24).toString("base64url");
+  const redirectUri = getGoogleRedirectUri(req);
+  const authUrl = buildGoogleAuthUrl({ redirectUri, state });
+  res.setHeader("Set-Cookie", `google_oauth_state=${signSession(state)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`);
+  return redirect(res, authUrl);
+}
+
+async function handleGoogleCallback(req, res, url) {
+  const state = url.searchParams.get("state") || "";
+  const code = url.searchParams.get("code") || "";
+  const error = url.searchParams.get("error") || "";
+  const cookies = parseCookies(req.headers.cookie || "");
+  const expectedState = cookies.google_oauth_state ? verifySession(cookies.google_oauth_state) : "";
+  res.setHeader("Set-Cookie", "google_oauth_state=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+
+  if (error) return sendText(res, 400, `Google authorization failed: ${error}`);
+  if (!state || !expectedState || state !== expectedState) return sendText(res, 400, "Invalid Google OAuth state.");
+  if (!code) return sendText(res, 400, "Missing Google OAuth code.");
+
+  await exchangeGoogleCode({ code, redirectUri: getGoogleRedirectUri(req) });
   return redirect(res, "/");
 }
 
@@ -496,6 +533,7 @@ ${renderHead("Stride OS Publisher")}
     </section>
 
     ${renderAgentPanel(options.agentState)}
+    ${renderIntegrationPanel(options)}
     ${renderFounderBoard(options.agentState?.founderBoard)}
 
     <details class="composer">
@@ -569,6 +607,34 @@ function renderAgentPanel(agentState = {}) {
       </form>
       <form method="post" action="/agents/run/founder-moment">
         <button class="secondary" type="submit">Run founder moment now</button>
+      </form>
+    </div>
+  </section>`;
+}
+
+function renderIntegrationPanel(options = {}) {
+  const google = options.googleAnalytics || {};
+  const status = google.connected ? "Conectado" : google.configured ? "Pronto para conectar" : "Configurar no Render";
+  const detail = google.connected
+    ? `GA4 ${google.propertyId} conectado${google.connectedAt ? ` em ${formatTime(google.connectedAt)}` : ""}.`
+    : google.configured
+      ? "Clique para autorizar a leitura do Google Analytics com sua conta Google."
+      : "Adicione GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET e GOOGLE_ANALYTICS_PROPERTY_ID no Render.";
+
+  return `<section class="integration-panel">
+    <div>
+      <p class="eyebrow">Integrações</p>
+      <h2>Fontes de dados</h2>
+      <p>Conecte analytics e canais para alimentar os diretores e os drafts com sinais reais.</p>
+    </div>
+    <div class="integration-status-card">
+      <span>Google Analytics</span>
+      <strong>${escapeHtml(status)}</strong>
+      <small>${escapeHtml(detail)}</small>
+    </div>
+    <div class="actions">
+      <form method="post" action="/auth/google">
+        <button class="secondary" type="submit" ${google.configured ? "" : "disabled"}>${google.connected ? "Reconectar Google Analytics" : "Conectar Google Analytics"}</button>
       </form>
     </div>
   </section>`;
@@ -991,7 +1057,7 @@ function renderHead(title) {
     .mode-chip { display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px; border-radius: 999px; font-weight: 900; font-size: 13px; }
     .mode-chip.dry { background: #e7f1f5; color: #24556c; }
     .mode-chip.live { background: #fae3df; color: #8b2d25; }
-    .mode-banner, .agent-panel, .composer, .item { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 0 rgba(0,0,0,.02); }
+    .mode-banner, .agent-panel, .integration-panel, .composer, .item { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 0 rgba(0,0,0,.02); }
     .mode-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-left: 4px solid var(--blue); }
     .mode-banner strong { display: block; font-size: 15px; margin-bottom: 3px; }
     .mode-banner p { color: var(--muted); font-size: 14px; line-height: 1.4; }
@@ -1000,6 +1066,14 @@ function renderHead(title) {
     .agent-panel { display: grid; grid-template-columns: 1.1fr 1.4fr auto; gap: 14px; align-items: center; }
     .agent-panel h2 { margin-bottom: 4px; }
     .agent-panel p { color: var(--muted); font-size: 14px; line-height: 1.4; }
+    .integration-panel { display: grid; grid-template-columns: 1.1fr 1.4fr auto; gap: 14px; align-items: center; }
+    .integration-panel h2 { margin-bottom: 4px; }
+    .integration-panel p { color: var(--muted); font-size: 14px; line-height: 1.4; }
+    .integration-status-card { border: 1px solid #e4dfd2; border-radius: 8px; background: #fffefa; padding: 10px 12px; color: var(--ink); }
+    .integration-status-card span { display: block; font-size: 12px; font-weight: 900; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
+    .integration-status-card strong { display: block; font-size: 15px; }
+    .integration-status-card small { display: block; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
     .agent-status { display: grid; gap: 8px; }
     .agent-status p { border: 1px solid #e4dfd2; border-radius: 8px; background: #fffefa; padding: 10px 12px; color: var(--ink); }
     .agent-status span { display: block; font-size: 12px; font-weight: 900; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
@@ -1084,7 +1158,7 @@ function renderHead(title) {
     .empty { color: var(--muted); padding: 26px 0; text-align: center; border: 1px dashed #d4cbbb; border-radius: 8px; background: rgba(255,253,250,.5); }
     @media (max-width: 760px) {
       .topbar, .mode-banner { align-items: stretch; flex-direction: column; }
-      .agent-panel { grid-template-columns: 1fr; }
+      .agent-panel, .integration-panel { grid-template-columns: 1fr; }
       .board-head { align-items: stretch; flex-direction: column; }
       .board-meta { justify-items: start; }
       .board-grid { grid-template-columns: 1fr; }

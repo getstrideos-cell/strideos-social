@@ -46,6 +46,16 @@ services:
         sync: false
       - key: OPENAI_MODEL
         value: gpt-5-mini
+      - key: GOOGLE_ANALYTICS_PROPERTY_ID
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://strideos-social.onrender.com/auth/google/callback
+      - key: GOOGLE_LOGIN_HINT
+        value: getstrideos@gmail.com
     disk:
       name: strideos-social-data
       mountPath: /var/data

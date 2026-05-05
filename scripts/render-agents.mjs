@@ -4,6 +4,7 @@ import { createQueueItem, queuePath, readQueue, updateQueue } from "./queue-stor
 import { refreshXAccessToken, XApiError } from "./x-client.mjs";
 import { readXTokenState, writeXTokenState } from "./x-token-store.mjs";
 import { createStructuredJson, hasOpenAI } from "./openai-client.mjs";
+import { getGoogleAnalyticsStatus, runGoogleAnalyticsReport } from "./google-analytics-client.mjs";
 
 const statePath = resolve(process.env.AGENT_STATE_PATH || join(dirname(queuePath), "agent-state.json"));
 const timeZone = process.env.AGENT_TIMEZONE || "America/Sao_Paulo";
@@ -406,8 +407,8 @@ function buildIntegrationStatus(signals) {
     },
     {
       name: "Landing analytics",
-      status: sources.has("plausible") || sources.has("posthog") ? "connected" : "needs key",
-      detail: "Uses Plausible or PostHog when API keys are configured."
+      status: sources.has("plausible") || sources.has("posthog") || sources.has("google-analytics") ? "connected" : "needs connection",
+      detail: "Uses Google Analytics OAuth, Plausible, or PostHog when connected."
     },
     {
       name: "Reddit/community radar",
@@ -510,6 +511,7 @@ async function collectTrendSignals() {
   signals.push(...(await collectXPerformanceSignals()));
   signals.push(...(await collectPlausibleSignals()));
   signals.push(...(await collectPostHogSignals()));
+  signals.push(...(await collectGoogleAnalyticsSignals()));
   signals.push(...(await collectRedditSignals()));
   signals.push(...(await collectInternalFeedbackSignals()));
 
@@ -724,6 +726,53 @@ async function collectPostHogSignals() {
   }
 }
 
+async function collectGoogleAnalyticsSignals() {
+  const status = await getGoogleAnalyticsStatus();
+  if (!status.configured || !status.connected) return [];
+
+  try {
+    const overview = await runGoogleAnalyticsReport({
+      metrics: ["activeUsers", "screenPageViews", "sessions", "engagementRate"],
+      limit: 1
+    });
+    const sources = await runGoogleAnalyticsReport({
+      dimensions: ["sessionSource"],
+      metrics: ["activeUsers", "sessions"],
+      limit: 5
+    });
+    const pages = await runGoogleAnalyticsReport({
+      dimensions: ["pagePath"],
+      metrics: ["screenPageViews", "activeUsers"],
+      limit: 5
+    });
+
+    const metrics = overview.rows?.[0]?.metricValues || [];
+    const activeUsers = Number(metrics[0]?.value || 0);
+    const pageViews = Number(metrics[1]?.value || 0);
+    const sessions = Number(metrics[2]?.value || 0);
+    const engagementRate = Number(metrics[3]?.value || 0);
+    const topSource = sources.rows?.[0];
+    const topPage = pages.rows?.[0];
+    const topSourceName = topSource?.dimensionValues?.[0]?.value || "";
+    const topSourceUsers = Number(topSource?.metricValues?.[0]?.value || 0);
+    const topPagePath = topPage?.dimensionValues?.[0]?.value || "";
+    const topPageViews = Number(topPage?.metricValues?.[0]?.value || 0);
+
+    return [
+      {
+        kind: "landing-analytics",
+        source: "google-analytics",
+        label: `Google Analytics: ${activeUsers} active users, ${sessions} sessions, ${pageViews} page views in the last 7 days${topSourceName ? `; top source ${topSourceName} with ${topSourceUsers} users` : ""}${topPagePath ? `; top page ${topPagePath} with ${topPageViews} views` : ""}`,
+        metrics: { activeUsers, sessions, pageViews, engagementRate, topSourceUsers, topPageViews },
+        score: activeUsers + sessions + topSourceUsers * 2 + topPageViews
+      }
+    ];
+  } catch (error) {
+    console.warn("Could not collect Google Analytics signals:", error.message);
+    return [];
+  }
+}
+
 async function posthogQuery(query) {
   const response = await fetch(`${posthogHost}/api/projects/${encodeURIComponent(posthogProjectId)}/query/`, {
     method: "POST",
@@ -859,6 +908,7 @@ function evidenceFor(signal) {
   }
   if (signal.source === "plausible") return signal.label;
   if (signal.source === "posthog") return signal.label;
+  if (signal.source === "google-analytics") return signal.label;
   if (signal.source === "reddit") {
     const metrics = signal.metrics || {};
     return `Reddit discussion with ${metrics.score || 0} upvotes and ${metrics.comments || 0} comments.`;
