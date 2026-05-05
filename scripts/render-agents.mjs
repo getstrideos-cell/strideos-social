@@ -30,6 +30,23 @@ const redditQueries = (process.env.REDDIT_SEARCH_QUERIES || "solo founder,build 
   .split(",")
   .map((query) => query.trim())
   .filter(Boolean);
+const weeklyMarketingDirective = {
+  title: "Diretriz de Marketing da Semana",
+  distributionBet:
+    "Apostar no X como palco principal de prova com posts honestos de processo e reaproveitar os melhores insights em comunidades build-in-public e subreddits relevantes.",
+  reasoning:
+    "Sinais públicos de contas grandes mostram atenção a IA/agents; conversas de comunidade mostram que fundadores valorizam relatos reais de progresso e distribuição. O Stride OS ganha tração provando o ritual, não vendendo promessas técnicas.",
+  risk:
+    "Se os posts soarem como promoção direta do Stride OS, vamos perder credibilidade. Manter mais de 70% do conteúdo educativo/operacional e menos de 30% de referência direta ao produto.",
+  requiredMix: [
+    "Um post no perfil explicando o estágio real: landing no ar, produto em desenvolvimento, sistema de distribuição sendo testado publicamente.",
+    "Um reply contextual em post recente de conta grande sobre agentes, IA, distribuição ou fundador solo, sem pitch.",
+    "Uma pergunta aberta na comunidade build-in-public sobre como fundadores montam seus updates semanais hoje.",
+    "Uma versão para r/Entrepreneur ou r/SaaS reaproveitando o melhor insight do X em tom de comunidade.",
+    "Tratar publicações como pesquisa e prova de trabalho, não como campanha para empurrar a landing."
+  ],
+  directProductMentionMaxRatio: 0.3
+};
 const plausibleApiKey = process.env.PLAUSIBLE_API_KEY || "";
 const plausibleSiteId = process.env.PLAUSIBLE_SITE_ID || "";
 const plausibleHost = process.env.PLAUSIBLE_HOST || "https://plausible.io";
@@ -224,6 +241,7 @@ function buildFounderBoard(today, signals, now, reason) {
     stage: "Landing page no ar. Produto principal do Stride OS ainda em desenvolvimento. O agente social e o fluxo de aprovação são a primeira cunha funcional.",
     signals,
     integrations: buildIntegrationStatus(signals),
+    weeklyMarketingDirective,
     intelligence: hasOpenAI() ? "Aprimorado por OpenAI" : "Modo fallback",
     marketRadar: {
       title: "Radar de Mercado",
@@ -238,12 +256,11 @@ function buildFounderBoard(today, signals, now, reason) {
     },
     marketingDirector: {
       title: "Diretor de Marketing",
-      distributionBet: "Use o X como canal de prova e depois reaproveite as melhores ideias na comunidade build-in-public e em posts no Reddit voltados a fundadores.",
-      reasoning: `O ângulo mais forte agora é: ${primarySignal.label}. O Stride OS pode entrar nessa conversa mostrando como um fundador solo transforma progresso em distribuição sem soar como uma máquina de conteúdo.`,
+      distributionBet: weeklyMarketingDirective.distributionBet,
+      reasoning: weeklyMarketingDirective.reasoning,
       recommendedActions: [
-        "Publicar um post no perfil nomeando o estágio atual com honestidade: landing page no ar, produto em desenvolvimento, sistema de distribuição sendo construído em público.",
-        "Deixar uma resposta relevante em um post de conta grande sobre agentes de IA, fundadores solo, distribuição ou envio de produto.",
-        "Postar uma pergunta não-promocional na comunidade build-in-public para entender como fundadores criam updates semanais hoje."
+        ...weeklyMarketingDirective.requiredMix,
+        `Usar como gancho da semana: ${primarySignal.label}.`
       ],
       experiment: {
         name: "Prova antes do produto",
@@ -251,7 +268,7 @@ function buildFounderBoard(today, signals, now, reason) {
         metric: "Respostas de fundadores solo, visitas ao perfil e cliques na landing page.",
         duration: "7 dias"
       },
-      risk: "Se todos os posts apontarem direto pro Stride OS, vai parecer promoção. Mantenha a maioria dos posts enquadrada como lição operacional de fundador."
+      risk: weeklyMarketingDirective.risk
     },
     productDirector: {
       title: "Diretor de Produto",
@@ -271,20 +288,21 @@ function buildFounderBoard(today, signals, now, reason) {
     },
     chiefOfStaff: {
       title: "Chief of Staff",
-      todayFocus: "Use o conselho para produzir um post público de prova de trabalho, um post de aprendizado em comunidade e uma resposta com alto contexto.",
+      todayFocus: "Executar a diretriz semanal do Marketing: prova no X, reply contextual, pergunta na comunidade e reaproveitamento para Reddit sem soar promocional.",
       decisions: [
         "Manter o Stride OS honesto sobre o estágio: landing page e projeto ativo, não lançamento completo do app.",
         "Priorizar aprendizado de distribuição sobre amplitude de features nesta semana.",
-        "Tratar respostas e posts em comunidade como pesquisa de mercado, não só engajamento."
+        "Tratar respostas e posts em comunidade como pesquisa de mercado, não só engajamento.",
+        "Manter a proporção de conteúdo educativo/operacional acima de 70% e referência direta ao produto abaixo de 30%."
       ],
-      nextMove: "Gerar o pacote de crescimento, aprovar apenas drafts com evidência e rejeitar qualquer coisa que pareça conselho genérico de build-in-public."
+      nextMove: "Gerar o pacote de crescimento seguindo o mix obrigatório da semana e rejeitar qualquer draft que pareça pitch direto ou conselho genérico."
     },
     growthExperiment: {
       title: "Experimento de Crescimento",
       name: "Narrativa do Conselho do Founder",
       channel: "Perfil no X mais comunidade build-in-public",
       hypothesis: "Um fundador solo construindo publicamente com um conselho de IA é mais memorável do que mais uma ferramenta de agendamento de SaaS.",
-      action: "Postar uma nota transparente sobre adicionar agentes Diretor de Marketing e Diretor de Produto ao Stride OS.",
+      action: "Publicar uma nota transparente sobre o estágio real do Stride OS e usar replies/comunidades para aprender como fundadores fazem updates semanais.",
       evidence: evidenceFor(aiSignal),
       sourceUrl: aiSignal.url || aiSignal.targetPostUrl || "",
       successMetric: "Pelo menos uma resposta qualificada de fundador, DM ou clique na landing."
@@ -307,12 +325,14 @@ async function enhanceFounderBoardWithOpenAI(board) {
         "Audiência: fundadores solo construindo SaaS em estágio inicial em público.",
         "Voz: builder prático com leve toque visionário. Honesto, direto, sem hype genérico de IA.",
         "Use apenas os signals fornecidos. Não invente métricas, clientes, receita, lançamentos ou features de produto.",
+        "A Diretriz de Marketing da Semana tem prioridade sobre recomendações genéricas. Preserve o mix: X como palco principal, reply em conta grande, pergunta na comunidade build-in-public, reaproveitamento em Reddit e menos de 30% de referência direta ao produto.",
         "Escreva todo o conteúdo em PORTUGUÊS BRASILEIRO. O texto que vai para os posts é tratado em outra etapa, aqui é apenas conteúdo estratégico para o fundador ler.",
         "Retorne orientação estratégica concisa que possa alimentar diretamente conteúdo, respostas, posts em comunidade e decisões de roadmap."
       ].join("\n"),
       input: JSON.stringify({
         stage: board.stage,
         integrations: board.integrations,
+        weeklyMarketingDirective: board.weeklyMarketingDirective,
         signals: compactSignals(board.signals).slice(0, 8),
         fallbackBoard: {
           marketRadar: board.marketRadar,
@@ -358,11 +378,14 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals, memory = empty
         "Todos os outros campos auxiliares (recommendedSurface, viralThesis, evidence, trendSignal) devem ser escritos em PORTUGUÊS BRASILEIRO — eles são lidos pelo fundador no painel, não publicados.",
         "Mantenha cada texto público (`text`) abaixo de 280 caracteres.",
         "A saída deve conter exatamente cinco itens.",
-        "Inclua pelo menos um item community-post.",
-        "Mantenha itens reply apenas se eles tiverem um replyToPostId real vindo do input.",
+        "Siga a Diretriz de Marketing da Semana como regra principal.",
+        "O pacote ideal desta semana é: 1 post de status real no perfil, 1 reply contextual se houver post-alvo recente, 1 pergunta para comunidade build-in-public, 1 item manual para r/Entrepreneur ou r/SaaS e 1 post educativo/operacional.",
+        "Inclua pelo menos dois itens community-post: um para a comunidade build-in-public no X e um para Reddit.",
+        "Mantenha itens reply apenas se eles tiverem um replyToPostId real vindo do input. Se não houver reply válido, substitua por post educativo sem pitch.",
         `Não sugira replies para posts com mais de ${replyMaxAgeHours} horas.`,
         "Não repita nenhum texto, post-alvo, sourceUrl ou ângulo já existente na memória fornecida.",
         "Não finja que o Stride OS está totalmente lançado. Atualmente tem só uma landing page e o projeto em desenvolvimento.",
+        "No máximo 1 dos 5 itens pode ter referência direta forte ao Stride OS. Os outros devem ser educativos, operacionais, pesquisa de mercado ou prova de trabalho.",
         "Sem hashtags a não ser que sejam genuinamente necessárias. Sem hype com cara de IA. Sem métricas falsas."
       ].join("\n"),
       input: JSON.stringify({
@@ -372,7 +395,8 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals, memory = empty
           marketingDirector: board?.marketingDirector,
           productDirector: board?.productDirector,
           chiefOfStaff: board?.chiefOfStaff,
-          growthExperiment: board?.growthExperiment
+          growthExperiment: board?.growthExperiment,
+          weeklyMarketingDirective: board?.weeklyMarketingDirective || weeklyMarketingDirective
         },
         signals: compactSignals(signals).slice(0, 8),
         avoid: compactAgentMemory(memory),
@@ -462,15 +486,6 @@ function buildGrowthPackItems(today, signals, board, memory = emptyAgentMemory()
     {
       type: "post",
       recommendedSurface: "Perfil Stride OS",
-      viralThesis: "Contrário e específico de fundador: contraria a narrativa genérica de velocidade da IA e nomeia o novo gargalo.",
-      evidence: evidenceFor(primarySignal),
-      sourceUrl: primarySignal.url,
-      trendSignal: primarySignal.label,
-      text: trimPost(`AI makes the first build easier.\n\nThat is not the same as making the founder easier to trust.\n\nThe new bottleneck for solo founders is clarity:\nwhat changed, what moved, what broke, and why anyone should keep watching.`)
-    },
-    {
-      type: "post",
-      recommendedSurface: "Perfil Stride OS",
       viralThesis: "Transparência sobre o estágio passa mais credibilidade do que afirmações polidas sobre o produto e atrai builders que querem o processo real.",
       evidence: "O Stride OS hoje é landing page mais projeto ativo, então o post se ancora no build real em vez de fingir que o produto completo já está pronto.",
       sourceUrl: "https://getstrideos.com",
@@ -480,10 +495,11 @@ function buildGrowthPackItems(today, signals, board, memory = emptyAgentMemory()
     {
       type: "post",
       recommendedSurface: "Perfil Stride OS",
-      viralThesis: "O ângulo de conselho executivo de IA é mais ownable que conselho genérico de build-in-public e faz o Stride OS parecer maior que um gerador de posts.",
-      evidence: "O Stride OS agora tem Radar de Mercado alimentando recomendações de Diretor de Marketing e Diretor de Produto antes dos drafts de conteúdo serem criados.",
-      trendSignal: "Fundadores solo estão buscando alavancagem que pareça um time operando, não só prompts de IA isolados.",
-      text: trimPost(`I am adding a tiny founder board to Stride OS:\n\nMarket Radar -> Marketing Director -> Product Director -> content agents\n\nThe goal is not more posts.\n\nThe goal is better founder decisions that turn into better public updates.`)
+      viralThesis: "Contrário e específico de fundador: contraria a narrativa genérica de velocidade da IA e nomeia o novo gargalo sem vender o produto.",
+      evidence: evidenceFor(primarySignal),
+      sourceUrl: primarySignal.url,
+      trendSignal: primarySignal.label,
+      text: trimPost(`AI makes the first build easier.\n\nThat is not the same as making the founder easier to trust.\n\nThe new bottleneck for solo founders is clarity:\nwhat changed, what moved, what broke, and why anyone should keep watching.`)
     },
     {
       type: "post",
@@ -495,6 +511,17 @@ function buildGrowthPackItems(today, signals, board, memory = emptyAgentMemory()
       sourceUrl: "https://x.com/i/communities/1493446837214187523",
       trendSignal: communitySignal.label,
       text: trimPost(`Question for builders here:\n\nwhen you post a weekly update, where does it start?\n\n1. memory\n2. changelog\n3. metrics\n4. screenshots\n5. whatever feels important that day\n\nI am trying to understand the real workflow behind consistent build in public.`)
+    },
+    {
+      type: "post",
+      format: "community-post",
+      requiresManualPublish: true,
+      recommendedSurface: "Reddit: r/Entrepreneur ou r/SaaS",
+      viralThesis: "Reaproveita o insight do X como discussão operacional para comunidade, sem levar o leitor direto para a landing.",
+      evidence: evidenceFor(communitySignal),
+      sourceUrl: communitySignal.url || "https://www.reddit.com/r/SaaS/",
+      trendSignal: communitySignal.label,
+      text: trimPost(`For solo founders building in public:\n\nwhat makes a weekly update actually useful to read?\n\nMetrics?\nScreenshots?\nLessons?\nFailed experiments?\n\nI am trying to separate real operating notes from content theater.`)
     }
   ];
 
