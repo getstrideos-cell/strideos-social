@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { loadEnv } from "./scripts/load-env.mjs";
 import { createQueueItem, readQueue, updateQueue } from "./scripts/queue-store.mjs";
 import { publishApproved } from "./scripts/publisher.mjs";
-import { generateDailyGrowthPack, generateFounderBoard, generateFounderMoment, generateXAccountEvolution, readAgentState, startRenderAgents } from "./scripts/render-agents.mjs";
+import { generateDailyGrowthPack, generateFounderBoard, generateFounderMoment, generateRedditPostPack, generateXAccountEvolution, readAgentState, startRenderAgents } from "./scripts/render-agents.mjs";
 import { buildGoogleAuthUrl, exchangeGoogleCode, getGoogleAnalyticsStatus, getGoogleRedirectUri, hasGoogleAnalyticsConfig } from "./scripts/google-analytics-client.mjs";
 
 await loadEnv();
@@ -69,6 +69,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/agents/run/growth" && req.method === "POST") return handleRunGrowthAgent(res);
     if (url.pathname === "/agents/run/board" && req.method === "POST") return handleRunFounderBoardAgent(res);
     if (url.pathname === "/agents/run/founder-moment" && req.method === "POST") return handleRunFounderMomentAgent(res);
+    if (url.pathname === "/agents/run/reddit" && req.method === "POST") return handleRunRedditAgent(res);
     if (url.pathname === "/agents/run/x-evolution" && req.method === "POST") return handleRunXEvolutionAgent(res);
     if (url.pathname === "/archive/delete-rejected" && req.method === "POST") return handleDeleteRejected(req, res);
 
@@ -263,6 +264,11 @@ async function handleRunFounderBoardAgent(res) {
 async function handleRunFounderMomentAgent(res) {
   await generateFounderMoment({ force: true, reason: "dashboard" });
   return redirect(res, "/aprovacao?aba=moments");
+}
+
+async function handleRunRedditAgent(res) {
+  await generateRedditPostPack({ force: true, reason: "dashboard" });
+  return redirect(res, "/aprovacao?aba=reddit");
 }
 
 async function handleRunXEvolutionAgent(res) {
@@ -489,9 +495,15 @@ function sendJson(res, status, payload) {
 
 function classifyItem(item) {
   if (item.format === "founder-moment" || item.requiresManualAsset) return "moments";
+  if (isRedditItem(item)) return "reddit";
   if (item.format === "community-post" || item.requiresManualPublish) return "comunidade";
   if (item.type === "reply") return "replies";
   return "posts";
+}
+
+function isRedditItem(item = {}) {
+  const haystack = [item.source, item.recommendedSurface, item.sourceUrl, item.title].filter(Boolean).join(" ");
+  return item.format === "community-post" && /reddit|r\/[A-Za-z0-9_]+/i.test(haystack);
 }
 
 function partitionQueue(queue) {
@@ -502,6 +514,7 @@ function partitionQueue(queue) {
   return {
     posts: drafts.filter((item) => classifyItem(item) === "posts"),
     replies: drafts.filter((item) => classifyItem(item) === "replies"),
+    reddit: drafts.filter((item) => classifyItem(item) === "reddit"),
     comunidade: drafts.filter((item) => classifyItem(item) === "comunidade"),
     moments: drafts.filter((item) => classifyItem(item) === "moments"),
     aprovados: approved,
@@ -613,7 +626,7 @@ ${renderHead("Entrar")}
 function renderHomePage(queue, options) {
   const partition = partitionQueue(queue);
   const board = options.agentState?.founderBoard;
-  const pendingTotal = partition.posts.length + partition.replies.length + partition.comunidade.length + partition.moments.length;
+  const pendingTotal = partition.posts.length + partition.replies.length + partition.reddit.length + partition.comunidade.length + partition.moments.length;
 
   const opportunity = board?.marketRadar?.topSignals?.[0];
   const priority = board?.chiefOfStaff?.todayFocus || board?.marketingDirector?.distributionBet;
@@ -651,6 +664,7 @@ function renderHomePage(queue, options) {
     <div class="queue-summary">
       <a href="/aprovacao?aba=posts"><span>Posts no perfil</span><span class="count">${partition.posts.length}</span></a>
       <a href="/aprovacao?aba=replies"><span>Replies sugeridos</span><span class="count">${partition.replies.length}</span></a>
+      <a href="/aprovacao?aba=reddit"><span>Posts para Reddit</span><span class="count">${partition.reddit.length}</span></a>
       <a href="/aprovacao?aba=comunidade"><span>Posts de comunidade</span><span class="count">${partition.comunidade.length}</span></a>
       <a href="/aprovacao?aba=moments"><span>Founder Moments</span><span class="count">${partition.moments.length}</span></a>
       <a href="/aprovacao?aba=aprovados"><span>Aprovados, prontos para publicar</span><span class="count">${partition.aprovados.length}</span></a>
@@ -707,6 +721,7 @@ function renderAgentStatusCompact(agentState = {}) {
     { label: "Conselho do Founder", state: agentState.founderBoard, schedule: "08:30" },
     { label: "Pacote de crescimento", state: agentState.growthPack, schedule: "09:00" },
     { label: "Founder moment", state: agentState.founderMoment, schedule: "10:30" },
+    { label: "Agente de Reddit", state: agentState.redditPostAgent, schedule: "11:00" },
     { label: "Evolução no X", state: agentState.xAccountEvolution, schedule: "18:00" }
   ];
 
@@ -731,12 +746,13 @@ function renderAgentStatusCompact(agentState = {}) {
 
 function renderApprovalPage(queue, options, activeTab) {
   const partition = partitionQueue(queue);
-  const validTabs = ["posts", "replies", "comunidade", "moments", "aprovados", "arquivo"];
+  const validTabs = ["posts", "replies", "reddit", "comunidade", "moments", "aprovados", "arquivo"];
   const tab = validTabs.includes(activeTab) ? activeTab : "posts";
 
   const tabLabels = {
     posts: "Posts no perfil",
     replies: "Replies",
+    reddit: "Reddit",
     comunidade: "Comunidade",
     moments: "Founder Moments",
     aprovados: "Aprovados",
@@ -758,6 +774,7 @@ function renderApprovalPage(queue, options, activeTab) {
   const tabIntros = {
     posts: "Posts originais para o seu perfil. Aprove ou rejeite antes de publicar.",
     replies: "Replies contextuais com contexto do post-alvo. Texto público em inglês.",
+    reddit: "Sugestões específicas para Reddit com título, subreddit e tese viral. Você publica manualmente e marca como postado.",
     comunidade: "Posts manuais para a comunidade build-in-public. Você publica fora do dashboard e marca como postado.",
     moments: "Ideias de fotos manuais com brief visual e instrução de captura. Você tira a foto, edita a legenda e publica manualmente no X.",
     aprovados: "Itens prontos para publicar. Em modo live, o botão Publicar dispara o post no X.",
@@ -775,6 +792,8 @@ function renderApprovalPage(queue, options, activeTab) {
     </div>
 
     <div class="tabs">${tabsHtml}</div>
+
+    ${tab === "reddit" ? renderRedditAgentBrief(options.agentState?.redditPostAgent) : ""}
 
     ${showComposer ? renderComposer() : ""}
 
@@ -794,7 +813,7 @@ function renderApprovalPage(queue, options, activeTab) {
     }
   `;
 
-  const pendingTotal = partition.posts.length + partition.replies.length + partition.comunidade.length + partition.moments.length;
+  const pendingTotal = partition.posts.length + partition.replies.length + partition.reddit.length + partition.comunidade.length + partition.moments.length;
   const approvedTotal = partition.aprovados.length;
 
   return renderShell("aprovacao", {
@@ -812,6 +831,33 @@ function renderPublishAllForm(dry, redirect) {
     <input type="hidden" name="_redirect" value="${escapeHtml(redirect)}">
     <button type="submit" class="publish">${dry ? "Testar publicação" : "Publicar todos os aprovados"}</button>
   </form>`;
+}
+
+function renderRedditAgentBrief(report) {
+  const signals = Array.isArray(report?.signals) ? report.signals : [];
+  return `<section class="card" style="margin-bottom: 16px;">
+    <div class="card-head">
+      <div>
+        <h3>Agente de Reddit</h3>
+        <p class="subtle">${report?.createdAt ? `Última análise em ${formatDate(report.createdAt)} às ${formatTime(report.createdAt)}.` : "Ainda sem análise específica de Reddit hoje."}</p>
+      </div>
+      <form method="post" action="/agents/run/reddit">
+        <button type="submit" class="secondary compact">Rodar agora</button>
+      </form>
+    </div>
+    <p style="font-size: 13.5px; line-height: 1.5; color: var(--ink-soft);">${escapeHtml(report?.summary || "O agente estuda r/SaaS, r/startups, r/Entrepreneur, r/SideProject e r/indiehackers para sugerir posts nativos, sem pitch direto.")}</p>
+    ${
+      signals.length
+        ? `<div class="row" style="gap: 8px; margin-top: 12px;">${signals.slice(0, 3).map((signal) => `<div style="padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft);">
+            <div style="display: flex; justify-content: space-between; gap: 12px;">
+              <strong style="font-size: 13px;">${escapeHtml(signal.label || "Sinal do Reddit")}</strong>
+              ${signal.url ? `<a href="${escapeHtml(signal.url)}" target="_blank" rel="noreferrer" style="font-size: 12px;">Abrir</a>` : ""}
+            </div>
+            <p class="subtle" style="font-size: 12px; margin-top: 4px;">${escapeHtml(evidenceText(signal))}</p>
+          </div>`).join("")}</div>`
+        : ""
+    }
+  </section>`;
 }
 
 function renderComposer() {
@@ -996,6 +1042,16 @@ function renderSignalItem(signal = {}) {
   return `<li><strong>${escapeHtml(signal.label || "")}</strong><small>${source}${signal.evidence ? ` · ${escapeHtml(signal.evidence)}` : ""}</small></li>`;
 }
 
+function evidenceText(signal = {}) {
+  const metrics = signal.metrics || {};
+  const parts = [
+    metrics.score !== undefined ? `score ${metrics.score}` : "",
+    metrics.comments !== undefined ? `${metrics.comments} comentários` : "",
+    signal.source ? `fonte ${signal.source}` : ""
+  ].filter(Boolean);
+  return parts.join(" · ") || "Sinal usado para calibrar a sugestão.";
+}
+
 function renderCouncilExperiment(experiment) {
   if (!experiment) return "";
   return `<div class="subcard">
@@ -1113,7 +1169,7 @@ function renderLearningsPage(queue, options) {
   `;
 
   const partition = partitionQueue(queue);
-  const pendingTotal = partition.posts.length + partition.replies.length + partition.comunidade.length + partition.moments.length;
+  const pendingTotal = partition.posts.length + partition.replies.length + partition.reddit.length + partition.comunidade.length + partition.moments.length;
 
   return renderShell("aprendizados", {
     ...options,
@@ -1242,7 +1298,7 @@ function extractTopThemes(items, limit) {
 
 function computePatterns(queue) {
   const patterns = [];
-  const byType = { posts: { total: 0, published: 0, rejected: 0 }, replies: { total: 0, published: 0, rejected: 0 }, comunidade: { total: 0, published: 0, rejected: 0 }, moments: { total: 0, published: 0, rejected: 0 } };
+  const byType = { posts: { total: 0, published: 0, rejected: 0 }, replies: { total: 0, published: 0, rejected: 0 }, reddit: { total: 0, published: 0, rejected: 0 }, comunidade: { total: 0, published: 0, rejected: 0 }, moments: { total: 0, published: 0, rejected: 0 } };
 
   for (const item of queue.items) {
     const cat = classifyItem(item);
@@ -1252,7 +1308,7 @@ function computePatterns(queue) {
     if (item.status === "rejected") byType[cat].rejected += 1;
   }
 
-  const labelMap = { posts: "Posts no perfil", replies: "Replies", comunidade: "Comunidade", moments: "Founder Moments" };
+  const labelMap = { posts: "Posts no perfil", replies: "Replies", reddit: "Reddit", comunidade: "Comunidade", moments: "Founder Moments" };
   for (const [cat, counts] of Object.entries(byType)) {
     if (counts.total < 2) continue;
     const rate = counts.total > 0 ? Math.round((counts.published / counts.total) * 100) : 0;
@@ -1333,6 +1389,7 @@ function renderSettingsPage(_queue, options) {
         ${renderAgentRow("Conselho do Founder", options.agentState?.founderBoard, "08:30 BRT", "/agents/run/board")}
         ${renderAgentRow("Pacote de crescimento", options.agentState?.growthPack, "09:00 BRT", "/agents/run/growth")}
         ${renderAgentRow("Founder moment", options.agentState?.founderMoment, "10:30 BRT", "/agents/run/founder-moment")}
+        ${renderAgentRow("Agente de Reddit", options.agentState?.redditPostAgent, "11:00 BRT", "/agents/run/reddit")}
         ${renderAgentRow("Evolução da conta no X", options.agentState?.xAccountEvolution, "18:00 BRT", "/agents/run/x-evolution")}
       </div>
     </section>
@@ -1437,6 +1494,7 @@ function statusOf(ok) {
 
 function renderItem(item, redirectTo) {
   const charCount = item.text?.length || 0;
+  const charLimit = isRedditItem(item) ? 1800 : 280;
   const title = typeLabel(item);
   const actionHint = getActionHint(item);
 
@@ -1447,7 +1505,7 @@ function renderItem(item, redirectTo) {
         <span class="pill type">${escapeHtml(title)}</span>
         ${item.title ? `<span class="item-title">${escapeHtml(item.title)}</span>` : ""}
       </div>
-      <span class="chars">${charCount}/280</span>
+      <span class="chars">${charCount}/${charLimit}</span>
     </div>
     <p class="action-hint">${escapeHtml(actionHint)}</p>
 
@@ -1462,8 +1520,8 @@ function renderItem(item, redirectTo) {
 
     <form method="post" action="/items/${encodeURIComponent(item.id)}/update">
       <input type="hidden" name="_redirect" value="${escapeHtml(redirectTo || "/aprovacao")}">
-      <label class="field-label">Texto público (em inglês)</label>
-      <textarea name="text" maxlength="280" ${item.status === "published" ? "readonly" : ""}>${escapeHtml(item.text || "")}</textarea>
+      <label class="field-label">${isRedditItem(item) ? "Texto para o Reddit (em inglês)" : "Texto público (em inglês)"}</label>
+      <textarea name="text" maxlength="${charLimit}" ${item.status === "published" ? "readonly" : ""}>${escapeHtml(item.text || "")}</textarea>
       ${renderRejectionReasonField(item)}
       ${renderAdvancedFields(item)}
       <div class="actions" style="margin-top: 12px;">
@@ -1617,6 +1675,7 @@ function renderAction(item, action, label, klass) {
 
 function typeLabel(item) {
   if (item.format === "founder-moment") return "Founder Moment";
+  if (isRedditItem(item)) return "Reddit";
   if (item.format === "community-post") return "Comunidade";
   if (item.type === "reply") return "Reply";
   return "Post";
@@ -1630,6 +1689,7 @@ function statusLabelPt(status) {
 function getActionHint(item) {
   if (item.format === "founder-moment" && item.status === "published") return "Imagem manual marcada como postada.";
   if (item.format === "founder-moment") return "Tire a foto sugerida, ajuste a legenda e poste manualmente no X.";
+  if (isRedditItem(item)) return "Publique manualmente no subreddit sugerido e marque como postado. Evite link direto no primeiro post.";
   if (item.format === "community-post") return "Poste manualmente na comunidade build-in-public e marque como postado.";
   if (item.status === "approved") return "Pronto. Publique agora, volte para rascunho ou rejeite.";
   if (item.status === "failed") return "Falhou. Revise o erro, ajuste o texto e aprove de novo.";

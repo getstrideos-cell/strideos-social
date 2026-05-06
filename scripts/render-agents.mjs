@@ -14,6 +14,8 @@ const growthHour = Number(process.env.GROWTH_PACK_HOUR || 9);
 const growthMinute = Number(process.env.GROWTH_PACK_MINUTE || 0);
 const momentHour = Number(process.env.FOUNDER_MOMENT_HOUR || 10);
 const momentMinute = Number(process.env.FOUNDER_MOMENT_MINUTE || 30);
+const redditAgentHour = Number(process.env.REDDIT_AGENT_HOUR || 11);
+const redditAgentMinute = Number(process.env.REDDIT_AGENT_MINUTE || 0);
 const xEvolutionHour = Number(process.env.X_EVOLUTION_HOUR || 18);
 const xEvolutionMinute = Number(process.env.X_EVOLUTION_MINUTE || 0);
 const schedulerIntervalMs = Number(process.env.AGENT_SCHEDULER_INTERVAL_MS || 60_000);
@@ -92,6 +94,10 @@ export async function runDueRenderAgents(now = new Date()) {
 
   if (isWithinScheduleWindow(local, momentHour, momentMinute)) {
     results.push(await generateFounderMoment({ reason: "schedule", now }));
+  }
+
+  if (isWithinScheduleWindow(local, redditAgentHour, redditAgentMinute)) {
+    results.push(await generateRedditPostPack({ reason: "schedule", now }));
   }
 
   if (isWithinScheduleWindow(local, xEvolutionHour, xEvolutionMinute)) {
@@ -201,6 +207,46 @@ export async function generateFounderMoment({ force = false, reason = "manual", 
   await writeAgentState(latestState);
 
   return { agent: "founder-moment", status: "created", date: today, count: 1 };
+}
+
+export async function generateRedditPostPack({ force = false, reason = "manual", now = new Date() } = {}) {
+  const today = getLocalDateKey(now);
+  const state = await readAgentState();
+
+  if (!force && state.redditPostAgent?.date === today) {
+    return { agent: "reddit-post-agent", status: "skipped", date: today, reason: "already-created" };
+  }
+
+  const queue = await readQueue();
+  const memory = buildAgentMemory(queue, now);
+  const signals = await collectRedditPlanningSignals();
+  const rawItems = selectNovelItems(buildRedditPostItems(today, signals, memory), memory, 3);
+  const enhancedItems = selectNovelItems(await enhanceRedditPostsWithOpenAI(rawItems, signals, memory), memory, 3);
+  const items = enhancedItems.map((item) =>
+    createQueueItem({
+      ...item,
+      status: "draft",
+      source: "render-reddit-agent"
+    })
+  );
+
+  await updateQueue((queue) => {
+    queue.items.unshift(...items);
+  });
+
+  const latestState = await readAgentState();
+  latestState.redditPostAgent = {
+    date: today,
+    reason,
+    createdAt: now.toISOString(),
+    count: items.length,
+    summary: summarizeRedditOpportunity(signals),
+    subreddits: redditSubreddits.slice(0, 6),
+    signals: signals.slice(0, 8)
+  };
+  await writeAgentState(latestState);
+
+  return { agent: "reddit-post-agent", status: "created", date: today, count: items.length };
 }
 
 export async function generateXAccountEvolution({ force = false, reason = "manual", now = new Date() } = {}) {
@@ -455,6 +501,55 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals, memory = empty
   }
 }
 
+async function enhanceRedditPostsWithOpenAI(items, signals, memory = emptyAgentMemory()) {
+  if (!hasOpenAI()) return items;
+
+  try {
+    const enhanced = await createStructuredJson({
+      name: "reddit_post_pack",
+      schema: redditPackSchema,
+      maxOutputTokens: 5000,
+      instructions: [
+        "Você é o agente de Reddit do Stride OS.",
+        "Seu trabalho é estudar sinais de subreddits de founders/SaaS e sugerir posts que pareçam nativos do Reddit, não anúncios.",
+        "O texto público (`text`) e o título (`title`) devem estar em INGLÊS.",
+        "Campos auxiliares como evidence, viralThesis e trendSignal devem estar em PORTUGUÊS BRASILEIRO.",
+        "Cada post deve ser útil mesmo se ninguém clicar em link. Não coloque link da landing no corpo por padrão.",
+        "Priorize perguntas, aprendizados honestos e dilemas reais de founder. Evite tom de thread do X, hype de IA, CTA agressivo e autopromoção.",
+        "Stride OS ainda está em desenvolvimento: landing page no ar, produto principal não lançado. Pode mencionar isso como contexto honesto em no máximo um item.",
+        "Retorne exatamente três sugestões. Não repita textos, ângulos ou URLs já usados na memória."
+      ].join("\n"),
+      input: JSON.stringify({
+        subreddits: redditSubreddits,
+        signals: compactSignals(signals).slice(0, 10),
+        avoid: compactAgentMemory(memory),
+        draftItems: items
+      })
+    });
+
+    return enhanced.items.slice(0, 3).map((item, index) => {
+      const original = items[index] || {};
+      const subreddit = item.subreddit || subredditFromSurface(original.recommendedSurface) || "SaaS";
+      return {
+        ...original,
+        type: "post",
+        format: "community-post",
+        requiresManualPublish: true,
+        title: trimRedditTitle(item.title || original.title || ""),
+        recommendedSurface: `Reddit: r/${subreddit.replace(/^r\//, "")}`,
+        viralThesis: item.viralThesis || original.viralThesis,
+        evidence: item.evidence || original.evidence,
+        sourceUrl: item.sourceUrl || original.sourceUrl || "",
+        trendSignal: item.trendSignal || original.trendSignal,
+        text: trimRedditPost(item.text || original.text || "")
+      };
+    });
+  } catch (error) {
+    console.warn("OpenAI reddit post enhancement failed:", error.message);
+    return items;
+  }
+}
+
 function compactSignals(signals = []) {
   return signals.map((signal) => ({
     kind: signal.kind || "",
@@ -577,6 +672,95 @@ function buildGrowthPackItems(today, signals, board, memory = emptyAgentMemory()
   }
 
   return items.map((item) => ({ ...item, generatedForDate: today }));
+}
+
+async function collectRedditPlanningSignals() {
+  const signals = [];
+  signals.push(...(await collectRedditSignals()));
+  signals.push(...(await collectGoogleAnalyticsSignals()));
+  signals.push(...(await collectInternalFeedbackSignals()));
+
+  if (signals.length === 0) {
+    signals.push(
+      {
+        kind: "reddit",
+        source: "reddit-fallback",
+        label: "Founders respond to specific operating questions better than generic startup advice",
+        url: "https://www.reddit.com/r/SaaS/",
+        metrics: {},
+        score: 1
+      },
+      {
+        kind: "reddit",
+        source: "reddit-fallback",
+        label: "Posts asking how other founders solve a recurring workflow tend to invite detailed replies",
+        url: "https://www.reddit.com/r/Entrepreneur/",
+        metrics: {},
+        score: 1
+      }
+    );
+  }
+
+  return dedupeSignals(signals).sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 12);
+}
+
+function buildRedditPostItems(today, signals, memory = emptyAgentMemory()) {
+  const primary = signals.find((signal) => signal.source === "reddit") || signals[0] || {};
+  const second = signals.find((signal) => signal !== primary && signal.source === "reddit") || signals[1] || primary;
+  const analytics = signals.find((signal) => signal.kind === "landing-analytics");
+  const primarySubreddit = subredditFromSignal(primary) || "SaaS";
+  const secondSubreddit = subredditFromSignal(second) || "Entrepreneur";
+
+  const items = [
+    {
+      type: "post",
+      format: "community-post",
+      requiresManualPublish: true,
+      title: "How do you make weekly founder updates useful instead of performative?",
+      recommendedSurface: `Reddit: r/${primarySubreddit}`,
+      viralThesis: "Pergunta operacional ampla o bastante para gerar respostas, mas específica o bastante para atrair fundadores que já tentaram build-in-public.",
+      evidence: evidenceFor(primary),
+      sourceUrl: primary.url || `https://www.reddit.com/r/${primarySubreddit}/`,
+      trendSignal: primary.label || "Fundadores querem updates reais, não teatro de conteúdo.",
+      text: trimRedditPost(`I am trying to understand how solo founders make weekly updates actually useful.\n\nMost build-in-public advice says \"share the journey\", but that gets vague fast.\n\nWhen your week is messy, what do you usually post?\n\n- what shipped\n- what broke\n- a metric\n- a lesson\n- a screenshot\n- the next decision\n\nThe part I am curious about: what makes an update worth reading instead of just being founder content?`)
+    },
+    {
+      type: "post",
+      format: "community-post",
+      requiresManualPublish: true,
+      title: "Do you track a weekly founder operating note?",
+      recommendedSurface: `Reddit: r/${secondSubreddit}`,
+      viralThesis: "Enquadra Stride OS como pesquisa de produto sem vender a ferramenta; deve atrair respostas sobre workflow real.",
+      evidence: evidenceFor(second),
+      sourceUrl: second.url || `https://www.reddit.com/r/${secondSubreddit}/`,
+      trendSignal: second.label || "Comunidades respondem melhor a perguntas de processo do que a anúncios.",
+      text: trimRedditPost(`For founders running a small SaaS: do you keep any kind of weekly operating note?\n\nI mean something simple like:\n\n- what changed in the product\n- what moved in the numbers\n- what users said\n- what you learned\n- what you are doing next\n\nI am building around this problem and I am trying not to overcomplicate it. Curious if people actually do this today, or if most updates are reconstructed from memory when it is time to post.`)
+    },
+    {
+      type: "post",
+      format: "community-post",
+      requiresManualPublish: true,
+      title: analytics ? "Landing page traffic is useful, but it does not tell me what to build next" : "What do you wish your weekly startup update forced you to notice?",
+      recommendedSurface: "Reddit: r/startups",
+      viralThesis: "Conecta analytics e decisão de produto: assunto natural para founders, menos promocional que falar da landing.",
+      evidence: analytics ? evidenceFor(analytics) : "O Stride OS ainda está em fase de landing/projeto, então a pergunta certa é sobre aprendizado e sinal, não venda.",
+      sourceUrl: analytics?.url || "https://www.reddit.com/r/startups/",
+      trendSignal: analytics?.label || "Founders need sharper weekly signals before they can tell a useful public story.",
+      text: trimRedditPost(`One thing I keep noticing while building: analytics can tell you what happened, but not always what to say or what to build next.\n\nA landing page can show visits, sources, and engagement.\n\nBut the harder founder question is:\n\nwhat changed this week that is actually worth explaining?\n\nIf you write weekly updates for a startup, what signal do you wish the update forced you to look at every time?`)
+    }
+  ];
+
+  return items.map((item) => ({ ...item, generatedForDate: today }));
+}
+
+function summarizeRedditOpportunity(signals) {
+  const redditSignals = signals.filter((signal) => signal.source === "reddit");
+  if (redditSignals.length === 0) {
+    return "Sem leitura forte do Reddit agora. O agente usou fallback: perguntas operacionais para fundadores, sem pitch direto.";
+  }
+  const top = redditSignals[0];
+  const subreddit = subredditFromSignal(top) || "SaaS";
+  return `Melhor oportunidade: r/${subreddit}. O sinal mais forte foi "${top.label}", com ${top.metrics?.comments || 0} comentários e score ${top.metrics?.score || top.score || 0}.`;
 }
 
 async function collectTrendSignals() {
@@ -1264,6 +1448,36 @@ const growthPackSchema = {
   required: ["items"]
 };
 
+const redditPackItemSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    subreddit: { type: "string" },
+    title: { type: "string" },
+    recommendedSurface: { type: "string" },
+    viralThesis: { type: "string" },
+    evidence: { type: "string" },
+    sourceUrl: { type: "string" },
+    trendSignal: { type: "string" },
+    text: { type: "string" }
+  },
+  required: ["subreddit", "title", "recommendedSurface", "viralThesis", "evidence", "sourceUrl", "trendSignal", "text"]
+};
+
+const redditPackSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    items: {
+      type: "array",
+      minItems: 3,
+      maxItems: 3,
+      items: redditPackItemSchema
+    }
+  },
+  required: ["items"]
+};
+
 function replyTextFor(signal) {
   const text = (signal.targetPostText || "").toLowerCase();
   if (text.includes("agent") || text.includes("ai")) {
@@ -1547,6 +1761,26 @@ async function writeAgentState(state) {
 function trimPost(text) {
   if (text.length <= 280) return text;
   return `${text.slice(0, 276).trimEnd()}...`;
+}
+
+function trimRedditPost(text) {
+  if (text.length <= 1800) return text;
+  return `${text.slice(0, 1796).trimEnd()}...`;
+}
+
+function trimRedditTitle(text) {
+  const clean = normalizeTweetText(text || "");
+  if (clean.length <= 180) return clean;
+  return `${clean.slice(0, 177).trimEnd()}...`;
+}
+
+function subredditFromSignal(signal = {}) {
+  return subredditFromSurface(`${signal.label || ""} ${signal.url || ""}`);
+}
+
+function subredditFromSurface(value = "") {
+  const match = String(value).match(/r\/([A-Za-z0-9_]+)/i);
+  return match?.[1] || "";
 }
 
 function signed(value) {
