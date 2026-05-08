@@ -37,19 +37,31 @@ const redditQueries = (process.env.REDDIT_SEARCH_QUERIES || "solo founder,build 
 const weeklyMarketingDirective = {
   title: "Diretriz de Marketing da Semana",
   distributionBet:
-    "Apostar no X como palco principal de prova com posts honestos de processo e reaproveitar os melhores insights em comunidades build-in-public e subreddits relevantes.",
+    "Apostar no perfil pessoal do Guilherme no X como palco principal de prova: menos volume, mais narrativa humana, imagens reais e bastidores de quem saiu do emprego para construir Lumera Juris e Stride OS.",
   reasoning:
-    "Sinais públicos de contas grandes mostram atenção a IA/agents; conversas de comunidade mostram que fundadores valorizam relatos reais de progresso e distribuição. O Stride OS ganha tração provando o ritual, não vendendo promessas técnicas.",
+    "Os sinais recentes do próprio perfil mostram que posts com imagem e narrativa pessoal performam melhor. A história mais forte não é só Stride OS: é o Guilherme, advogado que pediu demissão, construindo legal AI no Brasil e um sistema para operar sua própria distribuição em público.",
   risk:
-    "Se os posts soarem como promoção direta do Stride OS, vamos perder credibilidade. Manter mais de 70% do conteúdo educativo/operacional e menos de 30% de referência direta ao produto.",
+    "Se os posts soarem como promoção direta ou texto genérico de IA, vamos perder credibilidade. Manter tom humano, específico e honesto; usar Stride OS como parte da jornada, não como o único assunto.",
   requiredMix: [
-    "Um post no perfil explicando o estágio real: landing no ar, produto em desenvolvimento, sistema de distribuição sendo testado publicamente.",
-    "Um reply contextual em post recente de conta grande sobre agentes, IA, distribuição ou fundador solo, sem pitch.",
-    "Uma pergunta aberta na comunidade build-in-public sobre como fundadores montam seus updates semanais hoje.",
-    "Uma versão para r/Entrepreneur ou r/SaaS reaproveitando o melhor insight do X em tom de comunidade.",
-    "Tratar publicações como pesquisa e prova de trabalho, não como campanha para empurrar a landing."
+    "Gerar apenas 2 posts de texto para publicação automática após aprovação.",
+    "Gerar 1 Founder Moment com imagem/foto para publicação manual.",
+    "Priorizar narrativa de demissão, bastidores reais, Lumera Juris, Stride OS e aprendizado de founder.",
+    "Usar imagens sempre que houver uma história visual real: laptop, reunião, notas, landing, dashboard, workspace ou momento de construção.",
+    "Evitar posts genéricos de build-in-public e evitar transformar todo conteúdo em pitch."
   ],
-  directProductMentionMaxRatio: 0.3
+  directProductMentionMaxRatio: 0.35
+};
+const founderProfileContext = {
+  profileHandle: "@guigdluche",
+  profilePositioning: "Perfil pessoal do Guilherme Luche, não conta institucional do Stride OS.",
+  bio: "Advogado que pediu demissão para construir o futuro da IA jurídica no Brasil. Co-founder da Lumera Juris e founder do Stride OS.",
+  narrativeAssets: [
+    "pedido de demissão para construir",
+    "advogado entrando em legal AI",
+    "Lumera Juris como empresa principal de legal AI",
+    "Stride OS como sistema que ajuda o fundador a operar distribuição e build-in-public",
+    "imagens reais performam melhor que texto abstrato"
+  ]
 };
 const plausibleApiKey = process.env.PLAUSIBLE_API_KEY || "";
 const plausibleSiteId = process.env.PLAUSIBLE_SITE_ID || "";
@@ -119,8 +131,8 @@ export async function generateDailyGrowthPack({ force = false, reason = "manual"
   const memory = buildAgentMemory(queue, now);
   const board = await ensureFounderBoard(today, now);
   const signals = board?.signals || (await collectTrendSignals());
-  const rawItems = selectNovelItems(buildGrowthPackItems(today, signals, board, memory), memory, 5);
-  const enhancedItems = selectNovelItems(await enhanceGrowthPackWithOpenAI(rawItems, board, signals, memory), memory, 5);
+  const rawItems = selectNovelItems(buildGrowthPackItems(today, signals, board, memory), memory, 2);
+  const enhancedItems = selectNovelItems(await enhanceGrowthPackWithOpenAI(rawItems, board, signals, memory), memory, 2);
   const items = enhancedItems.map((item) =>
     createQueueItem({
       ...item,
@@ -312,21 +324,22 @@ function buildFounderBoard(today, signals, now, reason) {
     date: today,
     reason,
     createdAt: now.toISOString(),
-    stage: "Landing page no ar. Produto principal do Stride OS ainda em desenvolvimento. O agente social e o fluxo de aprovação são a primeira cunha funcional.",
+    stage: "Perfil pessoal do Guilherme no X. Ele é advogado, pediu demissão para construir legal AI no Brasil, é co-founder da Lumera Juris e founder do Stride OS. Stride OS ainda tem landing page e sistema social/approval funcionando; produto principal em desenvolvimento.",
     signals,
     integrations: buildIntegrationStatus(signals),
+    founderProfileContext,
     weeklyMarketingDirective,
     intelligence: hasOpenAI() ? "Aprimorado por OpenAI" : "Modo fallback",
     marketRadar: {
       title: "Radar de Mercado",
-      summary: "Fundadores solo estão prestando atenção em alavancagem com IA, distribuição e trabalho real. A oportunidade é posicionar o Stride OS como o ritmo operacional que transforma progresso real em narrativa pública.",
+      summary: "Fundadores solo prestam atenção em histórias reais de risco, construção e aprendizado. A oportunidade agora é posicionar Guilherme como o founder construindo Lumera Juris e Stride OS em público, não como uma marca tentando parecer maior do que é.",
       topSignals: signals.slice(0, 4).map((signal) => ({
         label: signal.label,
         source: signal.source,
         url: signal.url || signal.targetPostUrl || "",
         evidence: evidenceFor(signal)
       })),
-      implication: "Não posicione o Stride OS como brinquedo de automação polido. Posicione como camada operacional do fundador que começa enquanto o produto ainda está sendo construído."
+      implication: "Não escrever como conta institucional. Escrever como fundador real: demissão, bastidores, decisões, dúvidas, imagem quando houver prova visual e Stride OS como parte da jornada."
     },
     marketingDirector: {
       title: "Diretor de Marketing",
@@ -339,7 +352,7 @@ function buildFounderBoard(today, signals, now, reason) {
       experiment: {
         name: "Prova antes do produto",
         hypothesis: "Trabalho real e honesto em estágio inicial vai gerar respostas melhores do que afirmações polidas sobre o produto.",
-        metric: "Respostas de fundadores solo, visitas ao perfil e cliques na landing page.",
+        metric: "Respostas de fundadores, visitas ao perfil, seguidores qualificados, cliques na landing e performance de posts com imagem.",
         duration: "7 dias"
       },
       risk: weeklyMarketingDirective.risk
@@ -362,21 +375,23 @@ function buildFounderBoard(today, signals, now, reason) {
     },
     chiefOfStaff: {
       title: "Chief of Staff",
-      todayFocus: "Executar a diretriz semanal do Marketing: prova no X, reply contextual, pergunta na comunidade e reaproveitamento para Reddit sem soar promocional.",
+      todayFocus: "Executar a diretriz semanal do Marketing: menos posts, mais qualidade, dois textos fortes e um Founder Moment com imagem real.",
       decisions: [
         "Manter o Stride OS honesto sobre o estágio: landing page e projeto ativo, não lançamento completo do app.",
+        "Tratar o perfil como Guilherme construindo Lumera Juris e Stride OS, não como conta institucional.",
         "Priorizar aprendizado de distribuição sobre amplitude de features nesta semana.",
         "Tratar respostas e posts em comunidade como pesquisa de mercado, não só engajamento.",
-        "Manter a proporção de conteúdo educativo/operacional acima de 70% e referência direta ao produto abaixo de 30%."
+        "Manter a proporção de conteúdo educativo/operacional acima de 65% e referência direta ao produto abaixo de 35%.",
+        "Quando houver boa história visual, preferir Founder Moment manual com imagem."
       ],
-      nextMove: "Gerar o pacote de crescimento seguindo o mix obrigatório da semana e rejeitar qualquer draft que pareça pitch direto ou conselho genérico."
+      nextMove: "Gerar 2 posts de texto fortes e 1 Founder Moment com imagem. Rejeitar qualquer draft que pareça pitch direto ou conselho genérico."
     },
     growthExperiment: {
       title: "Experimento de Crescimento",
-      name: "Narrativa do Conselho do Founder",
-      channel: "Perfil no X mais comunidade build-in-public",
-      hypothesis: "Um fundador solo construindo publicamente com um conselho de IA é mais memorável do que mais uma ferramenta de agendamento de SaaS.",
-      action: "Publicar uma nota transparente sobre o estágio real do Stride OS e usar replies/comunidades para aprender como fundadores fazem updates semanais.",
+      name: "Perfil pessoal com prova visual",
+      channel: "Perfil pessoal do Guilherme no X",
+      hypothesis: "Narrativa pessoal + imagem real vai gerar mais confiança e descoberta do que volume alto de posts de texto.",
+      action: "Publicar dois posts de texto com narrativa humana e um Founder Moment manual com foto real de bastidor.",
       evidence: evidenceFor(aiSignal),
       sourceUrl: aiSignal.url || aiSignal.targetPostUrl || "",
       successMetric: "Pelo menos uma resposta qualificada de fundador, DM ou clique na landing."
@@ -395,9 +410,11 @@ async function enhanceFounderBoardWithOpenAI(board) {
       instructions: [
         "Você é o Conselho do Founder por IA do Stride OS.",
         "Aja como um CMO pragmático, CPO, líder de Inteligência de Mercado, Chief of Staff e líder de Growth para um fundador solo.",
+        "Contexto do perfil: o X é o perfil pessoal do Guilherme Luche (@guigdluche), advogado que pediu demissão para construir o futuro da IA jurídica no Brasil. Ele é co-founder da Lumera Juris e founder do Stride OS.",
         "Stride OS hoje: landing page no ar, produto principal ainda em desenvolvimento, fluxo de aprovação social existe, produto no Stripe ainda não está pronto.",
         "Audiência: fundadores solo construindo SaaS em estágio inicial em público.",
-        "Voz: builder prático com leve toque visionário. Honesto, direto, sem hype genérico de IA.",
+        "Voz: humano, específico, founder real. Builder prático com leve toque visionário. Honesto, direto, sem hype genérico de IA.",
+        "Sinal interno: posts com imagem e posts com narrativa da demissão/virada de carreira tendem a performar melhor. Reflita isso nas recomendações.",
         "Use apenas os signals fornecidos. Não invente métricas, clientes, receita, lançamentos ou features de produto.",
         "A Diretriz de Marketing da Semana tem prioridade sobre recomendações genéricas. Preserve o mix: X como palco principal, reply em conta grande, pergunta na comunidade build-in-public, reaproveitamento em Reddit e menos de 30% de referência direta ao produto.",
         "Escreva todo o conteúdo em PORTUGUÊS BRASILEIRO. O texto que vai para os posts é tratado em outra etapa, aqui é apenas conteúdo estratégico para o fundador ler.",
@@ -406,6 +423,7 @@ async function enhanceFounderBoardWithOpenAI(board) {
       input: JSON.stringify({
         stage: board.stage,
         integrations: board.integrations,
+        founderProfileContext: board.founderProfileContext,
         weeklyMarketingDirective: board.weeklyMarketingDirective,
         signals: compactSignals(board.signals).slice(0, 8),
         fallbackBoard: {
@@ -446,20 +464,20 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals, memory = empty
       schema: growthPackSchema,
       maxOutputTokens: 5000,
       instructions: [
-        "Você é o estrategista de conteúdo do Stride OS.",
+        "Você é o estrategista de conteúdo do perfil pessoal do Guilherme Luche.",
         "Reescreva ou melhore os itens de draft fornecidos usando o contexto do Conselho do Founder.",
         "IMPORTANTE: o campo `text` (texto público que vai pro X) DEVE permanecer em INGLÊS — é o post final que vai pro Twitter/X.",
         "Todos os outros campos auxiliares (recommendedSurface, viralThesis, evidence, trendSignal) devem ser escritos em PORTUGUÊS BRASILEIRO — eles são lidos pelo fundador no painel, não publicados.",
         "Mantenha cada texto público (`text`) abaixo de 280 caracteres.",
-        "A saída deve conter exatamente cinco itens.",
+        "A saída deve conter exatamente dois itens.",
         "Siga a Diretriz de Marketing da Semana como regra principal.",
-        "O pacote ideal desta semana é: 1 post de status real no perfil, 1 reply contextual se houver post-alvo recente, 1 pergunta para comunidade build-in-public, 1 item manual para r/Entrepreneur ou r/SaaS e 1 post educativo/operacional.",
-        "Inclua pelo menos dois itens community-post: um para a comunidade build-in-public no X e um para Reddit.",
-        "Mantenha itens reply apenas se eles tiverem um replyToPostId real vindo do input. Se não houver reply válido, substitua por post educativo sem pitch.",
-        `Não sugira replies para posts com mais de ${replyMaxAgeHours} horas.`,
+        "Os dois itens devem ser posts de texto para o perfil pessoal @guigdluche, tipo post e formato standard, aptos a publicar automaticamente após aprovação.",
+        "Não gere replies, posts de comunidade ou Reddit neste pacote. Esses canais têm agentes separados.",
+        "Contexto obrigatório: Guilherme é advogado, pediu demissão para construir o futuro da IA jurídica no Brasil, constrói Lumera Juris e Stride OS, e quer um tom mais humano.",
+        "Priorize especificidade: bastidores reais, risco pessoal, aprendizado de founder, demissão, legal AI no Brasil, construir duas empresas, e Stride OS como parte da jornada.",
         "Não repita nenhum texto, post-alvo, sourceUrl ou ângulo já existente na memória fornecida.",
         "Não finja que o Stride OS está totalmente lançado. Atualmente tem só uma landing page e o projeto em desenvolvimento.",
-        "No máximo 1 dos 5 itens pode ter referência direta forte ao Stride OS. Os outros devem ser educativos, operacionais, pesquisa de mercado ou prova de trabalho.",
+        "No máximo um dos dois itens pode citar Stride OS diretamente. O outro deve ser mais pessoal/operacional.",
         "Sem hashtags a não ser que sejam genuinamente necessárias. Sem hype com cara de IA. Sem métricas falsas."
       ].join("\n"),
       input: JSON.stringify({
@@ -470,6 +488,7 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals, memory = empty
           productDirector: board?.productDirector,
           chiefOfStaff: board?.chiefOfStaff,
           growthExperiment: board?.growthExperiment,
+          founderProfileContext: board?.founderProfileContext || founderProfileContext,
           weeklyMarketingDirective: board?.weeklyMarketingDirective || weeklyMarketingDirective
         },
         signals: compactSignals(signals).slice(0, 8),
@@ -478,16 +497,14 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals, memory = empty
       })
     });
 
-    const byReplyId = new Map(items.filter((item) => item.replyToPostId).map((item) => [item.replyToPostId, item]));
-    return enhanced.items.slice(0, 5).map((item, index) => {
-      const original = item.replyToPostId ? byReplyId.get(item.replyToPostId) || items[index] || {} : items[index] || {};
-      const format = item.format === "community-post" ? "community-post" : original.format;
+    return enhanced.items.slice(0, 2).map((item, index) => {
+      const original = items[index] || {};
       return {
         ...original,
-        type: item.type === "reply" && item.replyToPostId ? "reply" : "post",
-        format,
-        requiresManualPublish: format === "community-post" || Boolean(original.requiresManualPublish),
-        recommendedSurface: item.recommendedSurface,
+        type: "post",
+        format: "standard",
+        requiresManualPublish: false,
+        recommendedSurface: item.recommendedSurface || "Perfil pessoal do Guilherme no X",
         viralThesis: item.viralThesis,
         evidence: item.evidence,
         sourceUrl: item.sourceUrl || original.sourceUrl,
@@ -593,83 +610,34 @@ function buildIntegrationStatus(signals) {
 }
 
 function buildGrowthPackItems(today, signals, board, memory = emptyAgentMemory()) {
-  const xSignals = signals.filter((signal) => signal.kind === "x-post");
   const primarySignal = signals[0] || { label: "agentes de IA estão deixando fundadores solo mais rápidos", source: "fallback" };
-  const communitySignal =
-    signals.find((signal) => signal.kind === "community") ||
-    signals[1] ||
-    { label: "build-in-public funciona melhor quando os updates estão ancorados em progresso real", source: "fallback" };
-  const replyTargets = xSignals
-    .filter((signal) => signal.replyToPostId && signal.replySettings === "everyone" && signal.isFreshForReply)
-    .filter((signal) => !memory.replyToPostIds.has(String(signal.replyToPostId)))
-    .filter((signal) => !memory.sourceUrls.has(String(signal.targetPostUrl || signal.url || "").toLowerCase()))
-    .slice(0, 2);
+  const performanceSignal =
+    signals.find((signal) => signal.source === "x-performance") ||
+    signals.find((signal) => signal.kind === "internal-feedback") ||
+    primarySignal;
 
   const items = [
     {
       type: "post",
-      recommendedSurface: "Perfil Stride OS",
-      viralThesis: "Transparência sobre o estágio passa mais credibilidade do que afirmações polidas sobre o produto e atrai builders que querem o processo real.",
-      evidence: "O Stride OS hoje é landing page mais projeto ativo, então o post se ancora no build real em vez de fingir que o produto completo já está pronto.",
-      sourceUrl: "https://getstrideos.com",
-      trendSignal: "Fundadores respondem a processo honesto quando o produto ainda está sendo construído.",
-      text: trimPost(`Current Stride OS status:\n\nlanding page live\nproduct still being built\nsocial agent working before the core app is polished\n\nIt feels backwards, but maybe that is the point.\n\nDistribution is part of the product now.`)
+      format: "standard",
+      recommendedSurface: "Perfil pessoal do Guilherme no X",
+      viralThesis: "Narrativa humana de virada de carreira é mais forte que post institucional; conecta demissão, risco e construção real.",
+      evidence: "O perfil agora é pessoal e posts com narrativa da demissão/virada performam melhor que posts genéricos sobre build-in-public.",
+      sourceUrl: "https://x.com/guigdluche",
+      trendSignal: "Fundadores respondem a histórias específicas de risco e construção, especialmente quando há contexto pessoal.",
+      text: trimPost(`I used to think quitting my job was the big scary decision.\n\nIt was not.\n\nThe harder part is waking up the next day and realizing there is no script anymore.\n\nJust customers to understand, products to build, and a story you have to earn in public.`)
     },
     {
       type: "post",
-      recommendedSurface: "Perfil Stride OS",
-      viralThesis: "Contrário e específico de fundador: contraria a narrativa genérica de velocidade da IA e nomeia o novo gargalo sem vender o produto.",
-      evidence: evidenceFor(primarySignal),
-      sourceUrl: primarySignal.url,
-      trendSignal: primarySignal.label,
-      text: trimPost(`AI makes the first build easier.\n\nThat is not the same as making the founder easier to trust.\n\nThe new bottleneck for solo founders is clarity:\nwhat changed, what moved, what broke, and why anyone should keep watching.`)
-    },
-    {
-      type: "post",
-      format: "community-post",
-      requiresManualPublish: true,
-      recommendedSurface: "Comunidade build-in-public no X",
-      viralThesis: "Formato de pergunta convida outros builders a comparar workflows; otimizado para respostas e relacionamento, não para pitch direto.",
-      evidence: evidenceFor(communitySignal),
-      sourceUrl: "https://x.com/i/communities/1493446837214187523",
-      trendSignal: communitySignal.label,
-      text: trimPost(`Question for builders here:\n\nwhen you post a weekly update, where does it start?\n\n1. memory\n2. changelog\n3. metrics\n4. screenshots\n5. whatever feels important that day\n\nI am trying to understand the real workflow behind consistent build in public.`)
-    },
-    {
-      type: "post",
-      format: "community-post",
-      requiresManualPublish: true,
-      recommendedSurface: "Reddit: r/Entrepreneur ou r/SaaS",
-      viralThesis: "Reaproveita o insight do X como discussão operacional para comunidade, sem levar o leitor direto para a landing.",
-      evidence: evidenceFor(communitySignal),
-      sourceUrl: communitySignal.url || "https://www.reddit.com/r/SaaS/",
-      trendSignal: communitySignal.label,
-      text: trimPost(`For solo founders building in public:\n\nwhat makes a weekly update actually useful to read?\n\nMetrics?\nScreenshots?\nLessons?\nFailed experiments?\n\nI am trying to separate real operating notes from content theater.`)
+      format: "standard",
+      recommendedSurface: "Perfil pessoal do Guilherme no X",
+      viralThesis: "Conecta Lumera Juris e Stride OS sem parecer pitch: duas empresas como laboratório real de founder.",
+      evidence: evidenceFor(performanceSignal),
+      sourceUrl: performanceSignal.url || "https://getstrideos.com",
+      trendSignal: performanceSignal.label || primarySignal.label,
+      text: trimPost(`I am building Lumera Juris and Stride OS at the same time.\n\nOne is the company.\nThe other is becoming the operating layer I wish I had while building it.\n\nThat is the strange advantage of building in public:\nyour pain becomes product research.`)
     }
   ];
-
-  for (const target of replyTargets) {
-    items.push({
-      type: "reply",
-      replyToPostId: target.replyToPostId,
-      targetAuthor: target.targetAuthor,
-      targetHandle: target.targetHandle,
-      targetPostUrl: target.targetPostUrl,
-      targetPostText: target.targetPostText,
-      targetPostSummary: target.targetPostSummary,
-      replyRationale: `Post relevante de ${target.targetHandle} com respostas públicas abertas; a resposta adiciona a visão do Stride OS sem fazer pitch.`,
-      recommendedSurface: `Resposta a ${target.targetHandle}`,
-      viralThesis: "Responder a um post de conta grande com bom sinal pode gerar descoberta; a resposta é enquadrada como insight de fundador, não como anúncio de produto.",
-      evidence: evidenceFor(target),
-      sourceUrl: target.targetPostUrl,
-      trendSignal: target.label,
-      text: trimPost(replyTextFor(target))
-    });
-  }
-
-  while (items.length < 9) {
-    items.push(nextProfilePost(items.length, communitySignal));
-  }
 
   return items.map((item) => ({ ...item, generatedForDate: today }));
 }
@@ -1421,8 +1389,8 @@ const growthPackItemSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    type: { type: "string", enum: ["post", "reply"] },
-    format: { type: "string", enum: ["standard", "community-post"] },
+    type: { type: "string", enum: ["post"] },
+    format: { type: "string", enum: ["standard"] },
     replyToPostId: { type: "string" },
     recommendedSurface: { type: "string" },
     viralThesis: { type: "string" },
@@ -1440,8 +1408,8 @@ const growthPackSchema = {
   properties: {
     items: {
       type: "array",
-      minItems: 5,
-      maxItems: 5,
+      minItems: 2,
+      maxItems: 2,
       items: growthPackItemSchema
     }
   },
@@ -1521,32 +1489,46 @@ function summarizeTweet(text) {
 function pickFounderMomentSignal(today) {
   const options = [
     {
-      title: "Landing page antes do produto",
-      recommendedSurface: "Post manual no perfil Stride OS",
-      viralThesis: "Uma foto real do laptop/workspace torna o build em estágio inicial tangível e evita o padrão genérico de conselho de fundador gerado por IA.",
-      evidence: "O produto ainda está em desenvolvimento enquanto a landing page e o agente social já existem. Essa tensão é a história.",
-      sourceUrl: "https://getstrideos.com",
-      trendSignal: "Fundadores estão usando IA pra entregar mais rápido, mas distribuição e narrativa agora começam antes do produto completo estar pronto.",
-      whyNow: "O Stride OS hoje é honestamente landing page mais projeto ativo. Mostrar esse estágio faz o build parecer real e evita exagero.",
-      visualBrief: "Tire uma foto do seu laptop com a landing page do Stride OS aberta e seu projeto/editor ou anotações visíveis ao lado. Não mostre telas de produto falsas.",
-      captureInstruction: "Abra getstrideos.com de um lado e seu workspace ou anotações reais do outro. Esconda segredos, tokens, abas privadas e qualquer coisa relacionada a clientes. Use uma foto de mesa normal, não um mockup polido.",
-      postingNotes: "Enquadre como uma nota real de build: landing page no ar, produto em progresso e você construindo a engine de distribuição em público. Não dê a entender que o app completo está lançado.",
-      imageAlt: "Laptop mostrando a landing page do Stride OS ao lado de notas ou código do projeto, com detalhes privados escondidos.",
-      text: "Current Stride OS reality:\n\nlanding page is live\nproduct is still being built\nI am building the distribution system in public too\n\nIt feels early because it is.\n\nBut I want the story to compound while the product does."
+      title: "A mesa depois da demissão",
+      recommendedSurface: "Post manual no perfil pessoal do Guilherme",
+      viralThesis: "Imagem real + narrativa de demissão é o ativo mais humano do perfil e diferencia o conteúdo de posts genéricos sobre IA.",
+      evidence: "O perfil performa melhor quando mistura foto real, bastidor e a história de ter saído do emprego para construir.",
+      sourceUrl: "https://x.com/guigdluche",
+      trendSignal: "Fundadores respondem a risco pessoal e prova visual de trabalho real.",
+      whyNow: "A conta acabou de virar perfil pessoal de founder. Este é o momento certo para reforçar quem é Guilherme antes de tentar vender Stride OS.",
+      visualBrief: "Tire uma foto simples da sua mesa/laptop no momento real de trabalho. Pode mostrar Lumera Juris, Stride OS, anotações ou tarefas abertas, mas sem dados sensíveis.",
+      captureInstruction: "Use luz natural se possível. Não faça mockup polido. A imagem deve parecer um momento real de construção depois da demissão, com tela/notas suficientes para dar contexto.",
+      postingNotes: "Legenda deve ser sobre a escolha de sair do emprego e construir, não sobre vender produto. Stride OS pode aparecer como parte da rotina.",
+      imageAlt: "Mesa de trabalho do fundador com laptop e anotações de Lumera Juris e Stride OS, sem dados sensíveis visíveis.",
+      text: "The part I did not expect after quitting my job:\n\nthere is no clean line between building the product and becoming the person who can build it.\n\nSome days are code.\nSome days are sales.\nSome days are just learning how to not disappear."
     },
     {
-      title: "A nota operacional bagunçada do fundador",
-      recommendedSurface: "Post manual no perfil Stride OS",
-      viralThesis: "Fotos não-polidas de trabalho real podem gerar mais confiança que conselho abstrato de build-in-public porque mostram que o fundador está de fato no trabalho.",
-      evidence: "O Stride OS hoje é um projeto ativo com o produto principal ainda sendo construído, então o conteúdo mais honesto é a nota operacional por trás do produto.",
+      title: "Legal AI no Brasil, em construção",
+      recommendedSurface: "Post manual no perfil pessoal do Guilherme",
+      viralThesis: "Foto de bastidor da Lumera Juris conecta a autoridade de advogado com a construção de IA jurídica, uma narrativa mais forte que falar só de ferramenta.",
+      evidence: "A bio atual combina Lumera Juris e Stride OS; a história principal é founder de legal AI construindo em público.",
+      sourceUrl: "https://lumerajuris.com.br",
+      trendSignal: "Legal AI + founder journey cria um ângulo próprio e mais defensável.",
+      whyNow: "O perfil precisa ensinar o público a acompanhar duas frentes: empresa principal de legal AI e sistema de distribuição/operating layer.",
+      visualBrief: "Tire uma foto do notebook com alguma tela pública/segura da Lumera Juris ou uma anotação sobre legal AI no Brasil. Stride OS pode aparecer em uma aba secundária.",
+      captureInstruction: "Esconda casos, clientes, documentos jurídicos e qualquer dado privado. Mostre só contexto público, tarefa genérica ou anotação criada para a foto.",
+      postingNotes: "Legenda deve mostrar o contraste: advogado deixando carreira tradicional para construir infraestrutura de IA jurídica no Brasil.",
+      imageAlt: "Laptop com anotações sobre legal AI no Brasil e trabalho de founder, sem informações sensíveis.",
+      text: "I left law to build legal AI in Brazil.\n\nThat sentence sounds cleaner than the actual process.\n\nThe real version is messier:\nlearning product, sales, engineering, distribution, and still trying to keep the legal problem honest."
+    },
+    {
+      title: "Stride OS como sistema pessoal",
+      recommendedSurface: "Post manual no perfil pessoal do Guilherme",
+      viralThesis: "Mostra Stride OS como ferramenta nascida da própria dor do fundador, não como app abstrato.",
+      evidence: "A melhor história do Stride OS é que ele está sendo criado para resolver a distribuição do próprio Guilherme enquanto ele constrói Lumera Juris.",
       sourceUrl: "https://getstrideos.com",
-      trendSignal: "Posts de build-in-public que mostram trabalho inacabado podem superar conselho genérico porque criam prova de trabalho e convidam builders pro processo.",
-      whyNow: "O app principal do Stride OS ainda está em desenvolvimento, então o visual mais forte é a camada operacional honesta: notas, landing page, tarefas e decisões.",
-      visualBrief: "Foto de um caderno ou anotação de laptop com as cinco perguntas que você quer que o Stride OS faça toda semana. Coloque a landing page ao fundo se possível.",
-      captureInstruction: "Escreva as cinco perguntas no papel ou num app de notas. Mantenha o ar de inacabado do produto visível mas sem caos. Esconda informação privada.",
-      postingNotes: "Faça a legenda ser sobre o insight por trás do produto, não um anúncio de feature.",
-      imageAlt: "Notas do fundador mostrando cinco perguntas semanais de build-in-public com a landing page do Stride OS ao fundo.",
-      text: "I do not have the full Stride OS app polished yet.\n\nBut the core idea keeps getting clearer:\n\nfounder updates should start from what actually changed that week.\n\nThe product is being built around that ritual."
+      trendSignal: "Produtos que nascem de uma dor pública e visível tendem a parecer mais confiáveis.",
+      whyNow: "A nova estratégia do perfil permite mostrar Stride OS como bastidor da operação pessoal, com foto real.",
+      visualBrief: "Tire uma foto com o dashboard do Stride OS Social ou a landing getstrideos.com aberta junto de um post/rascunho em inglês. Não mostre tokens, senhas ou painéis sensíveis.",
+      captureInstruction: "Enquadre como bastidor de distribuição, não como lançamento de produto. Se aparecer métrica, garanta que pode ser pública.",
+      postingNotes: "Legenda deve explicar que Stride OS nasceu para transformar progresso real em updates melhores enquanto a empresa principal é construída.",
+      imageAlt: "Tela com Stride OS ou rascunhos de build-in-public abertos em um laptop, sem dados privados.",
+      text: "Stride OS started as a product idea.\n\nNow it is also becoming my own operating layer for building in public.\n\nThat feels like the right order:\nuse the pain first,\nthen build the product around what keeps hurting."
     }
   ];
 
