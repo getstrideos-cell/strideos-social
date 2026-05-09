@@ -46,6 +46,10 @@ const weeklyMarketingDirective = {
     "Gerar apenas 2 posts de texto para publicação automática após aprovação.",
     "Gerar 1 Founder Moment com imagem/foto para publicação manual.",
     "Priorizar narrativa de demissão, bastidores reais, Lumera Juris, Stride OS e aprendizado de founder.",
+    "Usar como gancho temas virais do X quando houver sinal real, por exemplo design + AI skills em posts do @gregisenberg.",
+    "Nos replies, priorizar interação em perfil grande: responder perguntas úteis, adicionar contexto real e convidar para a landing apenas quando fizer sentido.",
+    "Postar pergunta na comunidade build-in-public para captar dores de distribuição e tratar respostas como pesquisa de mercado.",
+    "Reaproveitar conteúdo para Reddit com adaptação de formato: menos pitch, mais história, pergunta e insight.",
     "Usar imagens sempre que houver uma história visual real: laptop, reunião, notas, landing, dashboard, workspace ou momento de construção.",
     "Evitar posts genéricos de build-in-public e evitar transformar todo conteúdo em pitch."
   ],
@@ -381,6 +385,9 @@ function buildFounderBoard(today, signals, now, reason) {
         "Tratar o perfil como Guilherme construindo Lumera Juris e Stride OS, não como conta institucional.",
         "Priorizar aprendizado de distribuição sobre amplitude de features nesta semana.",
         "Tratar respostas e posts em comunidade como pesquisa de mercado, não só engajamento.",
+        "Usar replies em contas grandes para adicionar contexto útil; só convidar para a landing quando a conversa pedir isso.",
+        "Usar comunidade build-in-public para perguntas sobre dores de distribuição.",
+        "Usar Reddit com formato nativo, mais história e insight, menos CTA.",
         "Manter a proporção de conteúdo educativo/operacional acima de 65% e referência direta ao produto abaixo de 35%.",
         "Quando houver boa história visual, preferir Founder Moment manual com imagem."
       ],
@@ -416,7 +423,7 @@ async function enhanceFounderBoardWithOpenAI(board) {
         "Voz: humano, específico, founder real. Builder prático com leve toque visionário. Honesto, direto, sem hype genérico de IA.",
         "Sinal interno: posts com imagem e posts com narrativa da demissão/virada de carreira tendem a performar melhor. Reflita isso nas recomendações.",
         "Use apenas os signals fornecidos. Não invente métricas, clientes, receita, lançamentos ou features de produto.",
-        "A Diretriz de Marketing da Semana tem prioridade sobre recomendações genéricas. Preserve o mix: X como palco principal, reply em conta grande, pergunta na comunidade build-in-public, reaproveitamento em Reddit e menos de 30% de referência direta ao produto.",
+        "A Diretriz de Marketing da Semana tem prioridade sobre recomendações genéricas. Preserve o mix: 2 posts de texto, 1 Founder Moment com imagem, replies úteis em contas grandes, pergunta na comunidade build-in-public, Reddit adaptado e menos de 35% de referência direta ao produto.",
         "Escreva todo o conteúdo em PORTUGUÊS BRASILEIRO. O texto que vai para os posts é tratado em outra etapa, aqui é apenas conteúdo estratégico para o fundador ler.",
         "Retorne orientação estratégica concisa que possa alimentar diretamente conteúdo, respostas, posts em comunidade e decisões de roadmap."
       ].join("\n"),
@@ -475,6 +482,7 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals, memory = empty
         "Não gere replies, posts de comunidade ou Reddit neste pacote. Esses canais têm agentes separados.",
         "Contexto obrigatório: Guilherme é advogado, pediu demissão para construir o futuro da IA jurídica no Brasil, constrói Lumera Juris e Stride OS, e quer um tom mais humano.",
         "Priorize especificidade: bastidores reais, risco pessoal, aprendizado de founder, demissão, legal AI no Brasil, construir duas empresas, e Stride OS como parte da jornada.",
+        "Quando houver sinal real no input de tema viral do X, como design + AI skills do @gregisenberg, use como contexto para uma experiência pessoal. Não finja que viu uma thread que não está nos signals.",
         "Não repita nenhum texto, post-alvo, sourceUrl ou ângulo já existente na memória fornecida.",
         "Não finja que o Stride OS está totalmente lançado. Atualmente tem só uma landing page e o projeto em desenvolvimento.",
         "No máximo um dos dois itens pode citar Stride OS diretamente. O outro deve ser mais pessoal/operacional.",
@@ -532,7 +540,8 @@ async function enhanceRedditPostsWithOpenAI(items, signals, memory = emptyAgentM
         "O texto público (`text`) e o título (`title`) devem estar em INGLÊS.",
         "Campos auxiliares como evidence, viralThesis e trendSignal devem estar em PORTUGUÊS BRASILEIRO.",
         "Cada post deve ser útil mesmo se ninguém clicar em link. Não coloque link da landing no corpo por padrão.",
-        "Priorize perguntas, aprendizados honestos e dilemas reais de founder. Evite tom de thread do X, hype de IA, CTA agressivo e autopromoção.",
+        "Priorize perguntas, aprendizados honestos, narrativa de demissão/transição e dilemas reais de founder. Evite tom de thread do X, hype de IA, CTA agressivo e autopromoção.",
+        "Adapte conteúdo do X para Reddit: menos pitch, mais história, contexto e pergunta aberta. Trate respostas como pesquisa de mercado.",
         "Stride OS ainda está em desenvolvimento: landing page no ar, produto principal não lançado. Pode mencionar isso como contexto honesto em no máximo um item.",
         "Retorne exatamente três sugestões. Não repita textos, ângulos ou URLs já usados na memória."
       ].join("\n"),
