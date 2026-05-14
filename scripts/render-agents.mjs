@@ -19,8 +19,8 @@ const redditAgentMinute = Number(process.env.REDDIT_AGENT_MINUTE || 0);
 const xEvolutionHour = Number(process.env.X_EVOLUTION_HOUR || 18);
 const xEvolutionMinute = Number(process.env.X_EVOLUTION_MINUTE || 0);
 const schedulerIntervalMs = Number(process.env.AGENT_SCHEDULER_INTERVAL_MS || 60_000);
-const replyMaxAgeHours = Number(process.env.REPLY_MAX_AGE_HOURS || 36);
-const xSignalMaxAgeHours = Number(process.env.X_SIGNAL_MAX_AGE_HOURS || 96);
+const replyMaxAgeHours = Number(process.env.REPLY_MAX_AGE_HOURS || 18);
+const xSignalMaxAgeHours = Number(process.env.X_SIGNAL_MAX_AGE_HOURS || 72);
 const memoryLookbackDays = Number(process.env.AGENT_MEMORY_LOOKBACK_DAYS || 45);
 const targetHandles = (process.env.TARGET_X_HANDLES || "gregisenberg,noahkagan,george__mack,buildinpublic,openai,perplexity_ai,AnthropicAI")
   .split(",")
@@ -37,14 +37,15 @@ const redditQueries = (process.env.REDDIT_SEARCH_QUERIES || "solo founder,build 
 const weeklyMarketingDirective = {
   title: "Diretriz de Marketing da Semana",
   distributionBet:
-    "Apostar no perfil pessoal do Guilherme no X como palco principal de prova: menos volume, mais narrativa humana, imagens reais e bastidores de quem saiu do emprego para construir Lumera Juris e Stride OS.",
+    "Apostar no perfil pessoal do Guilherme no X como palco principal de crescimento: menos volume, mais narrativa humana, replies cirurgicos em contas grandes, imagens reais e bastidores de quem saiu do emprego para construir Lumera Juris e Stride OS.",
   reasoning:
-    "Os sinais recentes do próprio perfil mostram que posts com imagem e narrativa pessoal performam melhor. A história mais forte não é só Stride OS: é o Guilherme, advogado que pediu demissão, construindo legal AI no Brasil e um sistema para operar sua própria distribuição em público.",
+    "Os sinais recentes do próprio perfil mostram que posts com imagem e narrativa pessoal performam melhor. Crescimento no X deve vir de prova social, descoberta em replies e posts que facam outros founders pensarem: preciso acompanhar esse cara construindo.",
   risk:
     "Se os posts soarem como promoção direta ou texto genérico de IA, vamos perder credibilidade. Manter tom humano, específico e honesto; usar Stride OS como parte da jornada, não como o único assunto.",
   requiredMix: [
     "Gerar apenas 2 posts de texto para publicação automática após aprovação.",
     "Gerar 1 Founder Moment com imagem/foto para publicação manual.",
+    "Gerar replies apenas para posts frescos de contas grandes, preferencialmente com menos de 18 horas, e nunca repetir o mesmo post-alvo.",
     "Priorizar narrativa de demissão, bastidores reais, Lumera Juris, Stride OS e aprendizado de founder.",
     "Usar como gancho temas virais do X quando houver sinal real, por exemplo design + AI skills em posts do @gregisenberg.",
     "Nos replies, priorizar interação em perfil grande: responder perguntas úteis, adicionar contexto real e convidar para a landing apenas quando fizer sentido.",
@@ -65,6 +66,45 @@ const founderProfileContext = {
     "Lumera Juris como empresa principal de legal AI",
     "Stride OS como sistema que ajuda o fundador a operar distribuição e build-in-public",
     "imagens reais performam melhor que texto abstrato"
+  ]
+};
+const viralGrowthMandate = {
+  title: "Mandato de Crescimento no X",
+  objective:
+    "Crescer seguidores qualificados e visitas ao perfil/landing posicionando Guilherme como fundador real construindo legal AI e seu proprio sistema de distribuicao em publico.",
+  northStarMetrics: [
+    "seguidores qualificados",
+    "visitas ao perfil",
+    "respostas de founders",
+    "cliques na landing",
+    "salvamentos/reposts por utilidade"
+  ],
+  contentPillars: [
+    "demissao e transicao de advogado para founder de legal AI",
+    "bastidores reais de construir Lumera Juris e Stride OS",
+    "aprendizados operacionais de distribuicao, produto, vendas e IA",
+    "agentes como alavanca de solo founder, sem hype vazio",
+    "ritual semanal: numeros reais, progresso real e update publico"
+  ],
+  viralHeuristics: [
+    "Comecar com uma frase especifica, tensa ou contraintuitiva.",
+    "Trocar conselho generico por cena real: horario, decisao, erro, tela, trade-off ou aprendizado concreto.",
+    "Fazer o leitor sentir que esta acompanhando a construcao antes de pedir qualquer clique.",
+    "Gerar conversa: pergunta forte, opiniao com nuance ou confissao que outro founder responderia.",
+    "Usar imagem real quando a historia visual aumenta confianca.",
+    "Em replies, adicionar algo que melhore a conversa do autor grande; nunca entrar parecendo propaganda."
+  ],
+  rejectionRules: [
+    "Rejeitar se poderia ter sido escrito por qualquer founder de SaaS.",
+    "Rejeitar se parece thread generica de IA, pitch direto ou conselho motivacional.",
+    "Rejeitar se cita Stride OS sem conectar a dor real da semana.",
+    "Rejeitar se nao aumenta a chance de alguem seguir o Guilherme depois de ler."
+  ],
+  replyRules: [
+    "Responder apenas posts recentes, relevantes e com conversa ativa.",
+    "Preferir autores grandes ou comunidades onde um reply bom pode gerar descoberta.",
+    "Nao responder posts antigos so porque o tema combina.",
+    "Nao convidar para a landing em reply, exceto quando a conversa pede explicitamente uma ferramenta ou exemplo."
   ]
 };
 const plausibleApiKey = process.env.PLAUSIBLE_API_KEY || "";
@@ -137,13 +177,25 @@ export async function generateDailyGrowthPack({ force = false, reason = "manual"
   const signals = board?.signals || (await collectTrendSignals());
   const rawItems = selectNovelItems(buildGrowthPackItems(today, signals, board, memory), memory, 2);
   const enhancedItems = selectNovelItems(await enhanceGrowthPackWithOpenAI(rawItems, board, signals, memory), memory, 2);
-  const items = enhancedItems.map((item) =>
-    createQueueItem({
-      ...item,
-      status: "draft",
-      source: "render-growth-pack"
-    })
-  );
+  const replyMemory = cloneAgentMemory(memory);
+  for (const item of enhancedItems) rememberItem(item, replyMemory);
+  const replyItems = selectNovelItems(buildReplyGrowthItems(today, signals, board, replyMemory), replyMemory, 2);
+  const items = [
+    ...enhancedItems.map((item) =>
+      createQueueItem({
+        ...item,
+        status: "draft",
+        source: "render-growth-pack"
+      })
+    ),
+    ...replyItems.map((item) =>
+      createQueueItem({
+        ...item,
+        status: "draft",
+        source: "render-growth-reply"
+      })
+    )
+  ];
 
   await updateQueue((queue) => {
     queue.items.unshift(...items);
@@ -333,17 +385,18 @@ function buildFounderBoard(today, signals, now, reason) {
     integrations: buildIntegrationStatus(signals),
     founderProfileContext,
     weeklyMarketingDirective,
+    viralGrowthMandate,
     intelligence: hasOpenAI() ? "Aprimorado por OpenAI" : "Modo fallback",
     marketRadar: {
       title: "Radar de Mercado",
-      summary: "Fundadores solo prestam atenção em histórias reais de risco, construção e aprendizado. A oportunidade agora é posicionar Guilherme como o founder construindo Lumera Juris e Stride OS em público, não como uma marca tentando parecer maior do que é.",
+      summary: "Fundadores solo prestam atenção em histórias reais de risco, construção e aprendizado. A oportunidade agora é transformar o perfil do Guilherme em um palco de prova que gera seguidores qualificados: narrativa pessoal, utilidade operacional e replies em conversas grandes.",
       topSignals: signals.slice(0, 4).map((signal) => ({
         label: signal.label,
         source: signal.source,
         url: signal.url || signal.targetPostUrl || "",
         evidence: evidenceFor(signal)
       })),
-      implication: "Não escrever como conta institucional. Escrever como fundador real: demissão, bastidores, decisões, dúvidas, imagem quando houver prova visual e Stride OS como parte da jornada."
+      implication: "Não escrever como conta institucional. Cada draft precisa responder: alguém seguiria o Guilherme depois de ler isso? Se não, o agente deve reescrever com mais tensão, especificidade, utilidade ou prova real."
     },
     marketingDirector: {
       title: "Diretor de Marketing",
@@ -351,12 +404,14 @@ function buildFounderBoard(today, signals, now, reason) {
       reasoning: weeklyMarketingDirective.reasoning,
       recommendedActions: [
         ...weeklyMarketingDirective.requiredMix,
+        "Antes de entregar cada draft, pontuar mentalmente hook, especificidade, utilidade, conversa e potencial de follow. Reescrever qualquer item fraco.",
+        "Usar replies como canal de descoberta: selecionar posts recentes de contas grandes e adicionar contexto que um founder salvaria ou responderia.",
         `Usar como gancho da semana: ${primarySignal.label}.`
       ],
       experiment: {
         name: "Prova antes do produto",
-        hypothesis: "Trabalho real e honesto em estágio inicial vai gerar respostas melhores do que afirmações polidas sobre o produto.",
-        metric: "Respostas de fundadores, visitas ao perfil, seguidores qualificados, cliques na landing e performance de posts com imagem.",
+        hypothesis: "Trabalho real, replies uteis e imagens de bastidor em estágio inicial vão gerar mais follows qualificados do que afirmações polidas sobre o produto.",
+        metric: "Seguidores qualificados, visitas ao perfil, respostas de fundadores, cliques na landing e performance de posts com imagem.",
         duration: "7 dias"
       },
       risk: weeklyMarketingDirective.risk
@@ -379,7 +434,7 @@ function buildFounderBoard(today, signals, now, reason) {
     },
     chiefOfStaff: {
       title: "Chief of Staff",
-      todayFocus: "Executar a diretriz semanal do Marketing: menos posts, mais qualidade, dois textos fortes e um Founder Moment com imagem real.",
+      todayFocus: "Executar a diretriz semanal do Marketing: menos posts, mais qualidade, dois textos fortes, replies frescos em contas grandes e um Founder Moment com imagem real.",
       decisions: [
         "Manter o Stride OS honesto sobre o estágio: landing page e projeto ativo, não lançamento completo do app.",
         "Tratar o perfil como Guilherme construindo Lumera Juris e Stride OS, não como conta institucional.",
@@ -389,19 +444,20 @@ function buildFounderBoard(today, signals, now, reason) {
         "Usar comunidade build-in-public para perguntas sobre dores de distribuição.",
         "Usar Reddit com formato nativo, mais história e insight, menos CTA.",
         "Manter a proporção de conteúdo educativo/operacional acima de 65% e referência direta ao produto abaixo de 35%.",
-        "Quando houver boa história visual, preferir Founder Moment manual com imagem."
+        "Quando houver boa história visual, preferir Founder Moment manual com imagem.",
+        "Cortar drafts que parecem corretos mas esqueciveis; crescimento no X exige especificidade e ponto de vista."
       ],
-      nextMove: "Gerar 2 posts de texto fortes e 1 Founder Moment com imagem. Rejeitar qualquer draft que pareça pitch direto ou conselho genérico."
+      nextMove: "Gerar 2 posts de texto fortes, replies frescos de descoberta e 1 Founder Moment com imagem. Rejeitar qualquer draft que pareça pitch direto ou conselho generico."
     },
     growthExperiment: {
       title: "Experimento de Crescimento",
       name: "Perfil pessoal com prova visual",
       channel: "Perfil pessoal do Guilherme no X",
-      hypothesis: "Narrativa pessoal + imagem real vai gerar mais confiança e descoberta do que volume alto de posts de texto.",
-      action: "Publicar dois posts de texto com narrativa humana e um Founder Moment manual com foto real de bastidor.",
+      hypothesis: "Narrativa pessoal + imagem real + replies uteis em contas grandes vai gerar mais confiança e descoberta do que volume alto de posts de texto.",
+      action: "Publicar dois posts de texto com narrativa humana, responder posts frescos de autores grandes e preparar um Founder Moment manual com foto real de bastidor.",
       evidence: evidenceFor(aiSignal),
       sourceUrl: aiSignal.url || aiSignal.targetPostUrl || "",
-      successMetric: "Pelo menos uma resposta qualificada de fundador, DM ou clique na landing."
+      successMetric: "Crescimento liquido de seguidores, pelo menos uma resposta qualificada de founder, DM ou clique na landing."
     }
   };
 }
@@ -422,8 +478,10 @@ async function enhanceFounderBoardWithOpenAI(board) {
         "Audiência: fundadores solo construindo SaaS em estágio inicial em público.",
         "Voz: humano, específico, founder real. Builder prático com leve toque visionário. Honesto, direto, sem hype genérico de IA.",
         "Sinal interno: posts com imagem e posts com narrativa da demissão/virada de carreira tendem a performar melhor. Reflita isso nas recomendações.",
+        "Objetivo de crescimento: ganhar seguidores qualificados no X e levar pessoas certas para a landing. Cada recomendação precisa explicar por que poderia gerar follow, reply qualificado, clique ou descoberta.",
         "Use apenas os signals fornecidos. Não invente métricas, clientes, receita, lançamentos ou features de produto.",
-        "A Diretriz de Marketing da Semana tem prioridade sobre recomendações genéricas. Preserve o mix: 2 posts de texto, 1 Founder Moment com imagem, replies úteis em contas grandes, pergunta na comunidade build-in-public, Reddit adaptado e menos de 35% de referência direta ao produto.",
+        "A Diretriz de Marketing da Semana e o Mandato de Crescimento no X têm prioridade sobre recomendações genéricas. Preserve o mix: 2 posts de texto, 1 Founder Moment com imagem, replies úteis em contas grandes, pergunta na comunidade build-in-public, Reddit adaptado e menos de 35% de referência direta ao produto.",
+        "Rejeite ideias que poderiam ter sido escritas por qualquer fundador. Procure tensão narrativa, prova real, cena concreta, ponto de vista e utilidade operacional.",
         "Escreva todo o conteúdo em PORTUGUÊS BRASILEIRO. O texto que vai para os posts é tratado em outra etapa, aqui é apenas conteúdo estratégico para o fundador ler.",
         "Retorne orientação estratégica concisa que possa alimentar diretamente conteúdo, respostas, posts em comunidade e decisões de roadmap."
       ].join("\n"),
@@ -432,6 +490,7 @@ async function enhanceFounderBoardWithOpenAI(board) {
         integrations: board.integrations,
         founderProfileContext: board.founderProfileContext,
         weeklyMarketingDirective: board.weeklyMarketingDirective,
+        viralGrowthMandate: board.viralGrowthMandate,
         signals: compactSignals(board.signals).slice(0, 8),
         fallbackBoard: {
           marketRadar: board.marketRadar,
@@ -478,13 +537,17 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals, memory = empty
         "Mantenha cada texto público (`text`) abaixo de 280 caracteres.",
         "A saída deve conter exatamente dois itens.",
         "Siga a Diretriz de Marketing da Semana como regra principal.",
+        "Siga o Mandato de Crescimento no X: cada post deve aumentar a chance de um founder seguir o Guilherme, responder ou clicar no perfil.",
         "Os dois itens devem ser posts de texto para o perfil pessoal @guigdluche, tipo post e formato standard, aptos a publicar automaticamente após aprovação.",
         "Não gere replies, posts de comunidade ou Reddit neste pacote. Esses canais têm agentes separados.",
         "Contexto obrigatório: Guilherme é advogado, pediu demissão para construir o futuro da IA jurídica no Brasil, constrói Lumera Juris e Stride OS, e quer um tom mais humano.",
         "Priorize especificidade: bastidores reais, risco pessoal, aprendizado de founder, demissão, legal AI no Brasil, construir duas empresas, e Stride OS como parte da jornada.",
+        "Aplique este filtro antes de retornar: hook forte na primeira linha, uma cena concreta ou tensão real, utilidade para founder, e zero frases que soem como LinkedIn/IA.",
+        "Um item deve tender a narrativa pessoal/prova de trabalho. O outro deve tender a insight operacional ou trend-jacking baseado em sinal real.",
         "Quando houver sinal real no input de tema viral do X, como design + AI skills do @gregisenberg, use como contexto para uma experiência pessoal. Não finja que viu uma thread que não está nos signals.",
         "Não repita nenhum texto, post-alvo, sourceUrl ou ângulo já existente na memória fornecida.",
         "Não finja que o Stride OS está totalmente lançado. Atualmente tem só uma landing page e o projeto em desenvolvimento.",
+        "A landing foi reposicionada: Stride OS não é só ferramenta de conteúdo; é um ritual semanal para transformar números reais, perguntas do founder e progresso em updates de build-in-public.",
         "No máximo um dos dois itens pode citar Stride OS diretamente. O outro deve ser mais pessoal/operacional.",
         "Sem hashtags a não ser que sejam genuinamente necessárias. Sem hype com cara de IA. Sem métricas falsas."
       ].join("\n"),
@@ -497,7 +560,8 @@ async function enhanceGrowthPackWithOpenAI(items, board, signals, memory = empty
           chiefOfStaff: board?.chiefOfStaff,
           growthExperiment: board?.growthExperiment,
           founderProfileContext: board?.founderProfileContext || founderProfileContext,
-          weeklyMarketingDirective: board?.weeklyMarketingDirective || weeklyMarketingDirective
+          weeklyMarketingDirective: board?.weeklyMarketingDirective || weeklyMarketingDirective,
+          viralGrowthMandate: board?.viralGrowthMandate || viralGrowthMandate
         },
         signals: compactSignals(signals).slice(0, 8),
         avoid: compactAgentMemory(memory),
@@ -583,7 +647,10 @@ function compactSignals(signals = []) {
     label: signal.label || "",
     url: signal.url || signal.targetPostUrl || "",
     evidence: evidenceFor(signal),
-    metrics: signal.metrics || {}
+    metrics: signal.metrics || {},
+    targetHandle: signal.targetHandle || "",
+    ageHours: signal.ageHours ?? null,
+    isFreshForReply: Boolean(signal.isFreshForReply)
   }));
 }
 
@@ -640,15 +707,86 @@ function buildGrowthPackItems(today, signals, board, memory = emptyAgentMemory()
       type: "post",
       format: "standard",
       recommendedSurface: "Perfil pessoal do Guilherme no X",
+      viralThesis: "A nova landing vira assunto de construção real: reposicionamento honesto sem parecer anúncio.",
+      evidence: "A landing agora posiciona Stride OS como ritual semanal, não como ferramenta genérica de conteúdo por IA.",
+      sourceUrl: "https://getstrideos.com",
+      trendSignal: "Founders tendem a confiar mais quando o reposicionamento mostra aprendizado em público.",
+      text: trimPost(`Reworked the Stride OS landing today.\n\nThe old version sounded too much like an AI content tool.\n\nThat is not what I am building.\n\nIt is a weekly ritual for founders:\nreal numbers, 5 questions, one honest build-in-public update.`)
+    },
+    {
+      type: "post",
+      format: "standard",
+      recommendedSurface: "Perfil pessoal do Guilherme no X",
       viralThesis: "Conecta Lumera Juris e Stride OS sem parecer pitch: duas empresas como laboratório real de founder.",
       evidence: evidenceFor(performanceSignal),
       sourceUrl: performanceSignal.url || "https://getstrideos.com",
       trendSignal: performanceSignal.label || primarySignal.label,
       text: trimPost(`I am building Lumera Juris and Stride OS at the same time.\n\nOne is the company.\nThe other is becoming the operating layer I wish I had while building it.\n\nThat is the strange advantage of building in public:\nyour pain becomes product research.`)
+    },
+    {
+      type: "post",
+      format: "standard",
+      recommendedSurface: "Perfil pessoal do Guilherme no X",
+      viralThesis: "Mostra a dor de distribuição como problema vivido, não como tese abstrata de marketing.",
+      evidence: evidenceFor(primarySignal),
+      sourceUrl: primarySignal.url || "https://x.com/guigdluche",
+      trendSignal: primarySignal.label || "Founders are paying attention to AI leverage and distribution.",
+      text: trimPost(`I am learning that distribution is not a separate founder task.\n\nIt is the public version of your operating system.\n\nIf the week was messy, your update will be messy too unless you have a rhythm for noticing what actually changed.`)
+    },
+    {
+      type: "post",
+      format: "standard",
+      recommendedSurface: "Perfil pessoal do Guilherme no X",
+      viralThesis: "Contraste memorável entre IA como output e founder como filtro: mais forte para seguidores qualificados.",
+      evidence: evidenceFor(primarySignal),
+      sourceUrl: primarySignal.url || "https://x.com/guigdluche",
+      trendSignal: primarySignal.label || "AI agents are increasing founder output.",
+      text: trimPost(`AI makes it easier to produce more.\n\nThat is not always good.\n\nAs a founder, the scarce skill is deciding what is actually worth saying:\nwhat moved, what hurt, what changed, and what someone else can learn from it.`)
+    },
+    {
+      type: "post",
+      format: "standard",
+      recommendedSurface: "Perfil pessoal do Guilherme no X",
+      viralThesis: "Pergunta operacional gera replies e pesquisa de mercado sem vender Stride OS diretamente.",
+      evidence: "Perguntas especificas sobre workflow convidam founders a responder com seus proprios processos.",
+      sourceUrl: "https://x.com/guigdluche",
+      trendSignal: "Comunidades build-in-public respondem melhor a perguntas de rotina do que a claims de produto.",
+      text: trimPost(`Question for solo founders:\n\nwhen your week is messy, how do you decide what to post?\n\nThe shipped thing?\nThe metric?\nThe lesson?\nThe blocker?\n\nI am realizing the hard part is not writing the update.\nIt is knowing what was worth noticing.`)
     }
   ];
 
   return items.map((item) => ({ ...item, generatedForDate: today }));
+}
+
+function buildReplyGrowthItems(today, signals, board, memory = emptyAgentMemory()) {
+  const candidates = signals
+    .filter((signal) => signal.source === "x")
+    .filter((signal) => signal.replyToPostId && signal.targetPostUrl)
+    .filter((signal) => signal.isFreshForReply)
+    .filter((signal) => !signal.replySettings || signal.replySettings === "everyone")
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+
+  return candidates.map((signal) => ({
+    type: "reply",
+    format: "standard",
+    replyToPostId: String(signal.replyToPostId),
+    targetAuthor: signal.targetAuthor || signal.targetHandle || "",
+    targetHandle: signal.targetHandle || "",
+    targetPostUrl: signal.targetPostUrl,
+    targetPostText: signal.targetPostText || "",
+    targetPostSummary: signal.targetPostSummary || summarizeTweet(signal.targetPostText || signal.label || ""),
+    replyRationale:
+      `Post fresco (${Math.max(0, Math.round(Number(signal.ageHours || 0)))}h) com conversa ativa. ` +
+      "Vale responder para gerar descoberta em uma audiencia maior adicionando contexto de founder, sem pitch.",
+    recommendedSurface: `Reply estrategico em ${signal.targetHandle || "conta grande no X"}`,
+    viralThesis:
+      "Replies em posts recentes de contas grandes podem gerar visitas ao perfil quando adicionam uma perspectiva util e especifica de founder.",
+    evidence: evidenceFor(signal),
+    sourceUrl: signal.targetPostUrl,
+    trendSignal: signal.label || board?.growthExperiment?.hypothesis || "",
+    text: trimPost(replyTextFor(signal)),
+    generatedForDate: today
+  }));
 }
 
 async function collectRedditPlanningSignals() {
@@ -833,7 +971,7 @@ async function collectXSignals() {
     }
   }
 
-  return signals.sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4);
+  return signals.sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 8);
 }
 
 async function collectXPerformanceSignals() {
@@ -1408,7 +1546,7 @@ const growthPackItemSchema = {
     trendSignal: { type: "string" },
     text: { type: "string" }
   },
-  required: ["type", "format", "replyToPostId", "recommendedSurface", "viralThesis", "evidence", "sourceUrl", "trendSignal", "text"]
+  required: ["type", "format", "recommendedSurface", "viralThesis", "evidence", "sourceUrl", "trendSignal", "text"]
 };
 
 const growthPackSchema = {
@@ -1457,13 +1595,19 @@ const redditPackSchema = {
 
 function replyTextFor(signal) {
   const text = (signal.targetPostText || "").toLowerCase();
-  if (text.includes("agent") || text.includes("ai")) {
-    return "The underrated shift is that AI makes shipping faster, but clarity becomes more valuable.\n\nSolo founders still need a rhythm for what changed, what moved, and what is worth sharing.";
+  if (text.includes("agent") || text.includes("ai") || text.includes("claude") || text.includes("openai")) {
+    return "The part I keep feeling as a founder: AI increases output, but it also increases noise.\n\nThe real leverage is building a rhythm for deciding what actually moved, what mattered, and what is worth sharing.";
   }
   if (text.includes("distribution") || text.includes("audience")) {
-    return "This is the part founders underestimate.\n\nDistribution gets easier when the weekly story is tied to real progress, not just opinions or polished launch posts.";
+    return "This is the part I underestimated.\n\nDistribution gets much easier when the story is tied to real weekly progress, not random opinions or polished launch posts.";
   }
-  return "The best build-in-public updates usually do not feel like content.\n\nThey feel like a clear operating note: what changed, what was learned, and what happens next.";
+  if (text.includes("design") || text.includes("product")) {
+    return "The hard part is that product taste only compounds if you keep shipping and exposing the work.\n\nBuilding in public turns that feedback loop from private guessing into something you can actually learn from.";
+  }
+  if (text.includes("quit") || text.includes("job") || text.includes("career")) {
+    return "The part people do not talk about enough: quitting is one decision.\n\nRebuilding your identity around shipping, selling, and learning every day is the real work.";
+  }
+  return "The best build-in-public updates usually do not feel like content.\n\nThey feel like a clear operating note: what changed, what was learned, what hurt, and what happens next.";
 }
 
 function normalizeTweetText(text) {
